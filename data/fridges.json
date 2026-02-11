@@ -1,0 +1,24 @@
+[
+  {
+    "id": 1,
+    "name": "LD250",
+    "status": "Cold",
+    "baseTemp_mK": 12,
+    "notes": "Stable, mixing chamber heater flaky",
+    "lines": [
+      {"name": "RF1", "type": "Readout", "attenuation": "20+20+10 dB", "status": "Good"},
+      {"name": "Flux1", "type": "DC", "attenuation": "0 dB", "status": "Noisy"}
+    ]
+  },
+  {
+    "id": 2,
+    "name": "XLD",
+    "status": "Cooling",
+    "baseTemp_mK": 85,
+    "notes": "Pump active",
+    "lines": [
+      {"name": "RF1", "type": "Readout", "attenuation": "10+10+5 dB", "status": "Good"},
+      {"name": "Flux1", "type": "DC", "attenuation": "0 dB", "status": "Good"}
+    ]
+  }
+]
