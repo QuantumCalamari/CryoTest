@@ -1,20 +1,113 @@
-<!DOCTYPE html>
-<html lang="en">
+<!doctype html>
+<html>
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Cryo Dashboard</title>
-<link rel="stylesheet" href="style.css">
+    <meta charset="UTF-8" />
+    <title>My Equipment Wiring Map</title>
+    <!-- Load the required Stlite CSS and JavaScript from a CDN -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.63.1/build/stlite.css" />
 </head>
 <body>
-<div class="container">
-  <div class="left-panel" id="fridge-buttons">
-    <!-- Buttons will be generated here -->
-  </div>
-  <div class="right-panel" id="fridge-view">
-    <h2>Select a fridge</h2>
-  </div>
-</div>
-<script src="script.js"></script>
+    <!-- This is where your Streamlit app will be rendered -->
+    <div id="root" style="width: 100vw; height: 100vh;"></div>
+
+    <!-- Load the Stlite library -->
+    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.63.1/build/stlite.js"></script>
+
+    <!-- Mount your Streamlit app -->
+    <script>
+        stlite.mount(
+            // This is your Python/Streamlit application code
+            `
+import streamlit as st
+import pandas as pd
+import random
+
+# --- App Title ---
+st.set_page_config(layout="wide")
+st.title("🔧 My Equipment Wiring Map")
+st.caption("This app runs entirely in your browser, thanks to Stlite and WebAssembly! [citation:2]")
+
+# --- Initialize Data in Session State ---
+# This keeps your data persistent across interactions
+if 'equipment_status' not in st.session_state:
+    st.session_state.equipment_status = {
+        "PLC-01": "Online",
+        "Motor-01": "Running",
+        "Pump-01": "Idle",
+        "Sensor-01": "Active"
+    }
+
+if 'connections' not in st.session_state:
+    st.session_state.connections = [
+        ("PLC-01", "Motor-01"),
+        ("PLC-01", "Pump-01"),
+        ("Motor-01", "Pump-01"),
+        ("Sensor-01", "PLC-01")
+    ]
+
+# --- Sidebar for Controls and Equipment List ---
+st.sidebar.header("Equipment Controls")
+
+# Display equipment with status indicators
+st.sidebar.subheader("Equipment Status")
+for equip, status in st.session_state.equipment_status.items():
+    color = "🟢" if status in ["Online", "Running", "Active"] else "🟡" if status == "Idle" else "🔴"
+    st.sidebar.markdown(f"{color} **{equip}**: {status}")
+
+# A button to simulate a status change (interactivity!)
+st.sidebar.subheader("Simulate")
+if st.sidebar.button("🔁 Randomize Motor Status"):
+    new_status = random.choice(["Running", "Idle", "Maintenance"])
+    st.session_state.equipment_status["Motor-01"] = new_status
+    st.rerun() # Rerun the script to reflect the change
+
+st.sidebar.divider()
+st.sidebar.info("This is a basic template. Replace this data and the diagram with your own equipment and connections.")
+
+# --- Main Area: Wiring Diagram ---
+st.header("Interactive Wiring Diagram")
+
+# For a real project, you could use a library like `graphviz` or `diagrams`.
+# Stlite supports many Python libraries. Here's a simple text-based representation.
+st.subheader("Connection Map:")
+
+# Create a simple visual representation using columns and expanders
+col1, col2 = st.columns(2)
+
+with col1:
+    st.markdown("**Active Connections**")
+    for conn in st.session_state.connections:
+        st.markdown(f"- 🔗 {conn[0]} ⟷ {conn[1]}")
+
+with col2:
+    st.markdown("**Equipment Details**")
+    with st.expander("PLC-01 (Main Controller)"):
+        st.write("**Type:** Programmable Logic Controller")
+        st.write(f"**Status:** {st.session_state.equipment_status['PLC-01']}")
+        st.write("**Connected to:** Motor-01, Pump-01, Sensor-01")
+
+    with st.expander("Motor-01 (Conveyor)"):
+        st.write("**Type:** AC Induction Motor")
+        st.write(f"**Status:** {st.session_state.equipment_status['Motor-01']}")
+        st.write("**Connected to:** PLC-01, Pump-01")
+
+    with st.expander("Pump-01 (Coolant)"):
+        st.write("**Type:** Centrifugal Pump")
+        st.write(f"**Status:** {st.session_state.equipment_status['Pump-01']}")
+        st.write("**Connected to:** PLC-01, Motor-01")
+
+    with st.expander("Sensor-01 (Temperature)"):
+        st.write("**Type:** RTD Sensor")
+        st.write(f"**Status:** {st.session_state.equipment_status['Sensor-01']}")
+        st.write("**Connected to:** PLC-01")
+
+# --- Footer ---
+st.divider()
+st.caption("Starter template for an in-browser Python app. Replace the content above with your own logic and diagrams.")
+            `,
+            // Mount the app to the 'root' div we defined above
+            document.getElementById("root")
+        );
+    </script>
 </body>
 </html>
