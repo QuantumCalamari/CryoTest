@@ -1,113 +1,808 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8" />
-    <title>My Equipment Wiring Map</title>
-    <!-- Load the required Stlite CSS and JavaScript from a CDN -->
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.63.1/build/stlite.css" />
+    <title>Cryostat Diagram</title>
+    <style>
+        body { margin:0; padding:20px; background:#f0f0f0; font-family:sans-serif; }
+        #canvas { width:1600px; height:1200px; background:white; border:1px solid #ccc; }
+
+        #toolbar {
+            position:fixed; top:20px; right:20px;
+            background:white; padding:15px; border:1px solid #ccc;
+            border-radius:5px; width:210px; max-height:95vh; overflow-y:auto;
+        }
+        #toolbar h3 { margin:0 0 8px 0; font-size:14px; }
+        #toolbar h4 { margin:10px 0 4px 0; font-size:11px; color:#888;
+                      border-top:1px solid #eee; padding-top:8px; text-transform:uppercase; letter-spacing:.5px; }
+
+        .tool-btn {
+            display:block; width:100%; margin:3px 0; padding:6px 8px;
+            cursor:pointer; border:1px solid #bbb; background:#f8f8f8;
+            font-size:12px; text-align:left; border-radius:3px;
+        }
+        .tool-btn:hover { background:#e8e8e8; }
+        .tool-btn.active      { background:#3498db; color:white; border-color:#2980b9; }
+        .tool-btn.active-comp { background:#8e44ad; color:white; border-color:#7d3c98; }
+        .tool-btn.delete-btn  { background:#fdecea; color:#c0392b; border-color:#e74c3c; }
+        .tool-btn.delete-btn.active { background:#e74c3c; color:white; border-color:#c0392b; }
+
+        #status { margin-top:10px; padding:6px; font-size:11px; background:#f9f9f9; border-radius:3px; line-height:1.6; }
+
+        /* Shared overlay */
+        .dialog-overlay {
+            display:none; position:fixed; top:0; left:0;
+            width:100%; height:100%; background:rgba(0,0,0,0.4); z-index:100;
+        }
+        .dialog-box {
+            position:absolute; top:50%; left:50%; transform:translate(-50%,-50%);
+            background:white; padding:20px; border-radius:8px;
+            box-shadow:0 4px 20px rgba(0,0,0,0.3);
+        }
+        .dialog-box h3 { margin:0 0 15px 0; font-size:15px; border-bottom:1px solid #ddd; padding-bottom:8px; }
+        .dialog-row { margin:10px 0; }
+        .dialog-row > label { display:block; font-size:12px; margin-bottom:4px; color:#555; }
+        .dialog-row input[type="text"],
+        .dialog-row input[type="number"] {
+            width:100%; padding:6px; box-sizing:border-box;
+            border:1px solid #ccc; border-radius:4px; font-size:13px;
+        }
+        .dialog-buttons { display:flex; gap:8px; margin-top:15px; flex-wrap:wrap; }
+        .dialog-buttons button {
+            flex:1; padding:8px; cursor:pointer; border-radius:4px;
+            border:1px solid #999; font-size:12px; min-width:60px;
+        }
+        .btn-primary   { background:#3498db; color:white; border-color:#2980b9 !important; }
+        .btn-secondary { background:#f0f0f0; }
+        .btn-danger    { background:#e74c3c; color:white; border-color:#c0392b !important; }
+
+        .connector-legend {
+            display:flex; gap:16px; font-size:11px; color:#555; margin-top:6px; justify-content:center;
+        }
+        #dc-dialog { width:520px; }
+        #rf-dialog { width:520px; max-height:90vh; overflow-y:auto; }
+        #rf-port-detail { margin-top:10px; padding:10px; background:#f9f9f9; border:1px solid #ddd; border-radius:4px; }
+        #rf-port-detail h4 { margin:0 0 8px 0; font-size:12px; color:#333; display:flex; justify-content:space-between; align-items:center; }
+        .detail-row { display:flex; align-items:center; gap:8px; margin:6px 0; }
+        .detail-row label { width:120px; flex-shrink:0; font-size:12px; color:#555; margin:0; }
+        .detail-row input[type="number"], .detail-row input[type="text"] {
+            flex:1; padding:4px 6px; border:1px solid #ccc; border-radius:3px; font-size:12px;
+        }
+        .small-btn { padding:4px 10px; font-size:11px; cursor:pointer; border-radius:3px; border:1px solid #999; background:#f0f0f0; white-space:nowrap; }
+        .small-btn.danger { background:#fdecea; border-color:#e74c3c; color:#c0392b; }
+        #rf-spacing-row { display:flex; align-items:center; gap:8px; margin:8px 0 4px; font-size:12px; color:#555; }
+        #rf-spacing-row label { margin:0; flex-shrink:0; }
+        #rf-spacing-row input[type="range"] { flex:1; }
+        #rf-spacing-val { width:36px; text-align:right; font-size:12px; color:#333; }
+        .rf-add-row { display:flex; gap:8px; margin:8px 0 4px; align-items:center; }
+        .rf-add-row button { padding:5px 12px; font-size:12px; cursor:pointer; border-radius:4px; border:1px solid #2ecc71; background:#e8f5e9; color:#27ae60; }
+        .rf-add-row span { font-size:11px; color:#888; }
+        #comp-dialog { width:300px; }
+    </style>
 </head>
 <body>
-    <!-- This is where your Streamlit app will be rendered -->
-    <div id="root" style="width: 100vw; height: 100vh;"></div>
+<canvas id="canvas" width="1600" height="1200"></canvas>
 
-    <!-- Load the Stlite library -->
-    <script src="https://cdn.jsdelivr.net/npm/@stlite/mountable@0.63.1/build/stlite.js"></script>
+<div id="toolbar">
+    <h3>Wire Tools</h3>
+    <button class="tool-btn active" id="tool-dc">DC Wire</button>
+    <button class="tool-btn" id="tool-rf">RF Wire</button>
 
-    <!-- Mount your Streamlit app -->
-    <script>
-        stlite.mount(
-            // This is your Python/Streamlit application code
-            `
-import streamlit as st
-import pandas as pd
-import random
+    <h4>RF Components</h4>
+    <button class="tool-btn" id="tool-attenuator">⊟ Attenuator</button>
+    <button class="tool-btn" id="tool-hemt">▷ HEMT Amplifier</button>
+    <button class="tool-btn" id="tool-switch">⇌ Switch</button>
+    <button class="tool-btn" id="tool-isolator">→| Isolator</button>
+    <button class="tool-btn" id="tool-circulator">↻ Circulator</button>
+    <button class="tool-btn" id="tool-filter">⋈ Filter</button>
 
-# --- App Title ---
-st.set_page_config(layout="wide")
-st.title("🔧 My Equipment Wiring Map")
-st.caption("This app runs entirely in your browser, thanks to Stlite and WebAssembly! [citation:2]")
+    <h4>Edit</h4>
+    <button class="tool-btn delete-btn" id="tool-delete">✕ Delete Mode</button>
 
-# --- Initialize Data in Session State ---
-# This keeps your data persistent across interactions
-if 'equipment_status' not in st.session_state:
-    st.session_state.equipment_status = {
-        "PLC-01": "Online",
-        "Motor-01": "Running",
-        "Pump-01": "Idle",
-        "Sensor-01": "Active"
+    <div id="status">
+        <div>Mode: <span id="selected-name">DC Wire</span></div>
+        <div id="instruction">Click first stage, then second</div>
+    </div>
+</div>
+
+<!-- DC dialog -->
+<div id="dc-dialog-overlay" class="dialog-overlay">
+    <div id="dc-dialog" class="dialog-box">
+        <h3>DC Wire Properties</h3>
+        <div class="dialog-row"><label>Name</label>
+            <input type="text" id="dc-dialog-name" placeholder="e.g. Control lines">
+        </div>
+        <div class="dialog-row">
+            <label>Micro-D Connector — click pin to toggle</label>
+            <canvas id="connector-canvas" width="480" height="110"></canvas>
+            <div class="connector-legend">
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e8f5e9;border:2px solid #2ecc71;margin-right:4px;vertical-align:middle;"></span>Connected</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#fdecea;border:2px solid #e74c3c;margin-right:4px;vertical-align:middle;"></span>Broken</span>
+            </div>
+        </div>
+        <div class="dialog-buttons">
+            <button id="dc-dialog-save" class="btn-primary">Save</button>
+            <button id="dc-dialog-delete" class="btn-danger">Delete Wire</button>
+            <button id="dc-dialog-cancel" class="btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- RF dialog -->
+<div id="rf-dialog-overlay" class="dialog-overlay">
+    <div id="rf-dialog" class="dialog-box">
+        <h3>RF Wire Properties</h3>
+        <div class="dialog-row"><label>Connector name</label>
+            <input type="text" id="rf-dialog-name" placeholder="e.g. SMA panel">
+        </div>
+        <div class="dialog-row">
+            <label>Click a port to select and edit</label>
+            <canvas id="rf-connector-canvas" width="480" height="320"></canvas>
+            <div class="connector-legend">
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#e8f5e9;border:2px solid #2ecc71;margin-right:4px;vertical-align:middle;"></span>Connected</span>
+                <span><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:#fdecea;border:2px solid #e74c3c;margin-right:4px;vertical-align:middle;"></span>Broken</span>
+            </div>
+        </div>
+        <div class="rf-add-row">
+            <button id="rf-add-port-btn">＋ Add port</button>
+            <span id="rf-port-count-label">0 ports</span>
+        </div>
+        <div id="rf-spacing-row">
+            <label>Wire spacing:</label>
+            <input type="range" id="rf-spacing-slider" min="8" max="60" value="18" step="1">
+            <span id="rf-spacing-val">18 px</span>
+        </div>
+        <div id="rf-port-detail" style="display:none;">
+            <h4>
+                <span id="rf-port-detail-title">Port 1</span>
+                <button class="small-btn danger" id="rf-remove-port-btn">✕ Remove</button>
+            </h4>
+            <div class="detail-row"><label>Label</label>
+                <input type="text" id="rf-port-label" placeholder="e.g. Qubit 1">
+            </div>
+            <div class="detail-row"><label>Attenuation (dB)</label>
+                <input type="number" id="rf-port-atten" step="0.1" min="0">
+            </div>
+            <div class="detail-row"><label>Status</label>
+                <button class="small-btn" id="rf-port-toggle">Toggle broken/connected</button>
+            </div>
+        </div>
+        <div class="dialog-buttons">
+            <button id="rf-dialog-save" class="btn-primary">Save</button>
+            <button id="rf-dialog-delete" class="btn-danger">Delete Wire</button>
+            <button id="rf-dialog-cancel" class="btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<!-- Component dialog (shared for all component types) -->
+<div id="comp-dialog-overlay" class="dialog-overlay">
+    <div id="comp-dialog" class="dialog-box">
+        <h3 id="comp-dialog-title">Component</h3>
+        <div id="comp-value-row" class="dialog-row">
+            <label id="comp-value-label">Value</label>
+            <input type="number" id="comp-value" step="0.5" min="0" placeholder="e.g. 20">
+        </div>
+        <div class="dialog-buttons">
+            <button id="comp-save" class="btn-primary">Save</button>
+            <button id="comp-delete" class="btn-danger">Delete</button>
+            <button id="comp-cancel" class="btn-secondary">Cancel</button>
+        </div>
+    </div>
+</div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+const stages = [
+    { id:'OVC',  x:100, y:50,   w:800, h:50 },
+    { id:'40K',  x:120, y:250,  w:760, h:50 },
+    { id:'4K',   x:140, y:450,  w:720, h:50 },
+    { id:'Vac1', x:180, y:650,  w:640, h:50 },
+    { id:'Vac2', x:180, y:850,  w:640, h:50 },
+    { id:'Vac3', x:180, y:1050, w:640, h:50 }
+];
+
+let currentTool = 'dc';
+let selectedStage = null;
+let wires = [];
+let selectedWire = null;
+
+// ═══════════════════════════════════════════════════════
+// COMPONENT DEFINITIONS
+// Each component: { type, pos:0..1, value:'' }
+// Half-dimensions for hit testing
+// ═══════════════════════════════════════════════════════
+const COMP_HW = 16; // half-width (along wire = y axis)
+const COMP_HH = 14; // half-height (perpendicular = x axis)
+
+function compPos(wire, comp) {
+    return {
+        x: wire.x1,
+        y: wire.y1 + comp.pos * (wire.y2 - wire.y1)
+    };
+}
+
+// ── Drawing each component type ──────────────────────
+// All drawn vertically (wire runs top→bottom).
+// cx,cy = centre. highlighted = bool.
+
+function drawCompBox(cx, cy, fillCol, strokeCol, highlighted) {
+    ctx.fillStyle = highlighted ? lighten(fillCol) : fillCol;
+    ctx.strokeStyle = highlighted ? '#3498db' : strokeCol;
+    ctx.lineWidth = highlighted ? 2.5 : 1.5;
+    ctx.beginPath();
+    ctx.rect(cx - COMP_HH, cy - COMP_HW, COMP_HH*2, COMP_HW*2);
+    ctx.fill(); ctx.stroke();
+}
+
+function lighten(hex) {
+    // Quick lighten: blend towards white
+    const r = parseInt(hex.slice(1,3),16), g = parseInt(hex.slice(3,5),16), b = parseInt(hex.slice(5,7),16);
+    return `rgb(${Math.min(255,r+60)},${Math.min(255,g+60)},${Math.min(255,b+60)})`;
+}
+
+function drawAttenuator(cx, cy, hl) {
+    drawCompBox(cx, cy, '#fffde7', '#f39c12', hl);
+    // Vertical zigzag inside the box
+    ctx.strokeStyle = '#c0392b'; ctx.lineWidth = 1.5;
+    const steps = 4, sh = (COMP_HW*2 - 6) / steps;
+    let sy = cy - COMP_HW + 3;
+    ctx.beginPath(); ctx.moveTo(cx, sy);
+    for (let i = 0; i < steps; i++) {
+        ctx.lineTo(cx + (i%2===0 ? 7 : -7), sy + sh*0.5);
+        ctx.lineTo(cx, sy + sh);
+        sy += sh;
+    }
+    ctx.stroke();
+}
+
+function drawHEMT(cx, cy, hl) {
+    // Transistor symbol (simplified): box + arrow pointing right
+    drawCompBox(cx, cy, '#e8f8f5', '#1abc9c', hl);
+    ctx.strokeStyle = '#16a085'; ctx.lineWidth = 1.5;
+    // Gate line (horizontal, left side)
+    ctx.beginPath(); ctx.moveTo(cx-COMP_HH+2, cy); ctx.lineTo(cx-4, cy); ctx.stroke();
+    // Channel (vertical bar)
+    ctx.beginPath(); ctx.moveTo(cx-4, cy-8); ctx.lineTo(cx-4, cy+8); ctx.stroke();
+    // Drain/source lines
+    ctx.beginPath(); ctx.moveTo(cx-4, cy-6); ctx.lineTo(cx+COMP_HH-2, cy-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-4, cy+6); ctx.lineTo(cx+COMP_HH-2, cy+6); ctx.stroke();
+    // Arrow on gate
+    ctx.fillStyle = '#16a085';
+    ctx.beginPath(); ctx.moveTo(cx-6, cy-2); ctx.lineTo(cx-2, cy); ctx.lineTo(cx-6, cy+2); ctx.closePath(); ctx.fill();
+}
+
+function drawSwitch(cx, cy, hl) {
+    drawCompBox(cx, cy, '#eaf4fb', '#2980b9', hl);
+    ctx.strokeStyle = '#2471a3'; ctx.lineWidth = 1.5;
+    // Vertical line at bottom (fixed contact)
+    ctx.beginPath(); ctx.moveTo(cx, cy+COMP_HW-2); ctx.lineTo(cx, cy+4); ctx.stroke();
+    // Angled blade (open switch)
+    ctx.beginPath(); ctx.moveTo(cx, cy-4); ctx.lineTo(cx+7, cy-10); ctx.stroke();
+    // Top contact dot
+    ctx.beginPath(); ctx.arc(cx, cy-COMP_HW+2, 2.5, 0, Math.PI*2);
+    ctx.fillStyle = '#2471a3'; ctx.fill();
+    // Bottom contact dot
+    ctx.beginPath(); ctx.arc(cx, cy+COMP_HW-2, 2.5, 0, Math.PI*2);
+    ctx.fill();
+}
+
+function drawIsolator(cx, cy, hl) {
+    drawCompBox(cx, cy, '#fef9e7', '#d4ac0d', hl);
+    ctx.strokeStyle = '#b7950b'; ctx.lineWidth = 1.5;
+    // Vertical arrow (signal flows one way, top→bottom)
+    ctx.beginPath(); ctx.moveTo(cx, cy-COMP_HW+4); ctx.lineTo(cx, cy+COMP_HW-6); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(cx-5, cy+COMP_HW-10); ctx.lineTo(cx, cy+COMP_HW-6); ctx.lineTo(cx+5, cy+COMP_HW-10); ctx.stroke();
+    // Block bar at top
+    ctx.beginPath(); ctx.moveTo(cx-7, cy-COMP_HW+4); ctx.lineTo(cx+7, cy-COMP_HW+4); ctx.stroke();
+}
+
+function drawCirculator(cx, cy, hl) {
+    // Circle with curved arrow
+    ctx.fillStyle = hl ? '#e8daef' : '#f5eef8';
+    ctx.strokeStyle = hl ? '#3498db' : '#8e44ad';
+    ctx.lineWidth = hl ? 2.5 : 1.5;
+    ctx.beginPath(); ctx.arc(cx, cy, COMP_HW-2, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+    // Curved arrow (clockwise)
+    ctx.strokeStyle = '#6c3483'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.arc(cx, cy, 6, -Math.PI*0.75, Math.PI*0.75);
+    ctx.stroke();
+    // Arrowhead
+    const ax = cx + 6*Math.cos(Math.PI*0.75), ay = cy + 6*Math.sin(Math.PI*0.75);
+    ctx.fillStyle = '#6c3483';
+    ctx.beginPath();
+    ctx.moveTo(ax, ay);
+    ctx.lineTo(ax+5, ay-2);
+    ctx.lineTo(ax+2, ay+5);
+    ctx.closePath(); ctx.fill();
+}
+
+function drawFilter(cx, cy, hl) {
+    drawCompBox(cx, cy, '#fdfefe', '#2e86c1', hl);
+    // Bandpass symbol: two humps
+    ctx.strokeStyle = '#1a5276'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(cx-COMP_HH+3, cy);
+    // First hump
+    ctx.bezierCurveTo(cx-8, cy-10, cx-3, cy-10, cx, cy-4);
+    // Second hump
+    ctx.bezierCurveTo(cx+3, cy+2, cx+8, cy-8, cx+COMP_HH-3, cy);
+    ctx.stroke();
+    // Baseline
+    ctx.beginPath();
+    ctx.moveTo(cx-COMP_HH+3, cy); ctx.lineTo(cx+COMP_HH-3, cy);
+    ctx.strokeStyle = '#aaa'; ctx.lineWidth = 1; ctx.stroke();
+}
+
+// ── Master draw function ─────────────────────────────
+function drawComponent(wire, comp, highlighted) {
+    const {x, y} = compPos(wire, comp);
+
+    // Erase wire segment behind component
+    ctx.clearRect(x - COMP_HH - 2, y - COMP_HW - 2, (COMP_HH+2)*2, (COMP_HW+2)*2);
+
+    // Redraw wire stubs above and below
+    ctx.strokeStyle = 'orange'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.moveTo(x, wire.y1); ctx.lineTo(x, y - COMP_HW); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(x, y + COMP_HW); ctx.lineTo(x, wire.y2); ctx.stroke();
+
+    switch(comp.type) {
+        case 'attenuator': drawAttenuator(x, y, highlighted); break;
+        case 'hemt':       drawHEMT(x, y, highlighted); break;
+        case 'switch':     drawSwitch(x, y, highlighted); break;
+        case 'isolator':   drawIsolator(x, y, highlighted); break;
+        case 'circulator': drawCirculator(x, y, highlighted); break;
+        case 'filter':     drawFilter(x, y, highlighted); break;
     }
 
-if 'connections' not in st.session_state:
-    st.session_state.connections = [
-        ("PLC-01", "Motor-01"),
-        ("PLC-01", "Pump-01"),
-        ("Motor-01", "Pump-01"),
-        ("Sensor-01", "PLC-01")
-    ]
+    // Label (right of component)
+    ctx.fillStyle = '#555'; ctx.font = 'bold 9px Arial';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    const labelMap = {
+        attenuator:'ATT', hemt:'HEMT', switch:'SW',
+        isolator:'ISO', circulator:'CIRC', filter:'FLT'
+    };
+    let lbl = labelMap[comp.type] || comp.type.toUpperCase();
+    if (comp.value !== undefined && comp.value !== '') lbl += ` ${comp.value}dB`;
+    ctx.fillText(lbl, x + COMP_HH + 3, y);
+}
 
-# --- Sidebar for Controls and Equipment List ---
-st.sidebar.header("Equipment Controls")
+// ═══════════════════════════════════════════════════════
+// DRAWING
+// ═══════════════════════════════════════════════════════
+function drawStages() {
+    stages.forEach(s => {
+        ctx.fillStyle = '#3498db'; ctx.fillRect(s.x, s.y, s.w, s.h);
+        ctx.fillStyle = 'black'; ctx.font = '14px Arial'; ctx.textAlign = 'left';
+        ctx.fillText(s.id, s.x+10, s.y+30);
+    });
+}
 
-# Display equipment with status indicators
-st.sidebar.subheader("Equipment Status")
-for equip, status in st.session_state.equipment_status.items():
-    color = "🟢" if status in ["Online", "Running", "Active"] else "🟡" if status == "Idle" else "🔴"
-    st.sidebar.markdown(f"{color} **{equip}**: {status}")
+function drawWires() {
+    wires.forEach((wire, index) => {
+        ctx.strokeStyle = wire.type==='dc' ? 'green' : 'orange';
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(wire.x1, wire.y1); ctx.lineTo(wire.x2, wire.y2); ctx.stroke();
 
-# A button to simulate a status change (interactivity!)
-st.sidebar.subheader("Simulate")
-if st.sidebar.button("🔁 Randomize Motor Status"):
-    new_status = random.choice(["Running", "Idle", "Maintenance"])
-    st.session_state.equipment_status["Motor-01"] = new_status
-    st.rerun() # Rerun the script to reflect the change
+        ctx.fillStyle = wire.type==='dc' ? 'green' : 'orange';
+        ctx.font = '12px Arial'; ctx.textAlign = 'left';
+        const mx = (wire.x1+wire.x2)/2, my = (wire.y1+wire.y2)/2;
+        if (wire.type==='rf') {
+            ctx.fillText(wire.name||'RF', mx+4, my-4);
+            ctx.fillText(`${wire.ports?wire.ports.length:0} ch`, mx+4, my+12);
+        } else {
+            ctx.fillText(wire.name||'DC', mx+4, my-4);
+        }
 
-st.sidebar.divider()
-st.sidebar.info("This is a basic template. Replace this data and the diagram with your own equipment and connections.")
+        if (selectedWire === index) {
+            ctx.strokeStyle = 'red'; ctx.lineWidth = 4;
+            ctx.beginPath(); ctx.moveTo(wire.x1, wire.y1); ctx.lineTo(wire.x2, wire.y2); ctx.stroke();
+        }
 
-# --- Main Area: Wiring Diagram ---
-st.header("Interactive Wiring Diagram")
+        if (wire.components) {
+            wire.components.forEach(comp => drawComponent(wire, comp, false));
+        }
+    });
+}
 
-# For a real project, you could use a library like `graphviz` or `diagrams`.
-# Stlite supports many Python libraries. Here's a simple text-based representation.
-st.subheader("Connection Map:")
+function redraw() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    drawStages();
+    drawWires();
+    if (selectedStage) {
+        ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
+        ctx.strokeRect(selectedStage.x, selectedStage.y, selectedStage.w, selectedStage.h);
+    }
+}
 
-# Create a simple visual representation using columns and expanders
-col1, col2 = st.columns(2)
+// ═══════════════════════════════════════════════════════
+// HIT TESTING
+// ═══════════════════════════════════════════════════════
+function getStageAt(mx, my) {
+    for (const s of stages)
+        if (mx>=s.x && mx<=s.x+s.w && my>=s.y && my<=s.y+s.h) return s;
+    return null;
+}
 
-with col1:
-    st.markdown("**Active Connections**")
-    for conn in st.session_state.connections:
-        st.markdown(f"- 🔗 {conn[0]} ⟷ {conn[1]}")
+function getWireAt(mx, my) {
+    for (let i=0; i<wires.length; i++) {
+        const w = wires[i];
+        const len2 = (w.y2-w.y1)**2 + (w.x2-w.x1)**2;
+        if (len2===0) continue;
+        const pad = 10;
+        if (mx < Math.min(w.x1,w.x2)-pad || mx > Math.max(w.x1,w.x2)+pad) continue;
+        if (my < Math.min(w.y1,w.y2)-pad || my > Math.max(w.y1,w.y2)+pad) continue;
+        const dist = Math.abs((w.y2-w.y1)*mx - (w.x2-w.x1)*my + w.x2*w.y1 - w.y2*w.x1) / Math.sqrt(len2);
+        if (dist < 10) return i;
+    }
+    return null;
+}
 
-with col2:
-    st.markdown("**Equipment Details**")
-    with st.expander("PLC-01 (Main Controller)"):
-        st.write("**Type:** Programmable Logic Controller")
-        st.write(f"**Status:** {st.session_state.equipment_status['PLC-01']}")
-        st.write("**Connected to:** Motor-01, Pump-01, Sensor-01")
+function getComponentAt(mx, my) {
+    for (let wi=0; wi<wires.length; wi++) {
+        const wire = wires[wi];
+        if (!wire.components) continue;
+        for (let ci=0; ci<wire.components.length; ci++) {
+            const {x, y} = compPos(wire, wire.components[ci]);
+            if (mx>=x-COMP_HH && mx<=x+COMP_HH && my>=y-COMP_HW && my<=y+COMP_HW)
+                return { wireIndex:wi, compIndex:ci };
+        }
+    }
+    return null;
+}
 
-    with st.expander("Motor-01 (Conveyor)"):
-        st.write("**Type:** AC Induction Motor")
-        st.write(f"**Status:** {st.session_state.equipment_status['Motor-01']}")
-        st.write("**Connected to:** PLC-01, Pump-01")
+// ═══════════════════════════════════════════════════════
+// WIRE HELPERS
+// ═══════════════════════════════════════════════════════
+function getSiblingCount(s1id, s2id) {
+    return wires.filter(w=>(w.stageA===s1id&&w.stageB===s2id)||(w.stageA===s2id&&w.stageB===s1id)).length;
+}
+function nextOffset(s1id, s2id, sp) {
+    const c = getSiblingCount(s1id, s2id); if (!c) return 0;
+    return ((c%4===1)?1:-1) * Math.ceil(c/2) * (sp||18);
+}
+function repositionSiblings(s1id, s2id, sp) {
+    const sibs = wires.filter(w=>(w.stageA===s1id&&w.stageB===s2id)||(w.stageA===s2id&&w.stageB===s1id));
+    if (!sibs.length) return;
+    const sA=stages.find(s=>s.id===s1id), sB=stages.find(s=>s.id===s2id);
+    if (!sA||!sB) return;
+    const cx = (sA.x+sA.w/2+sB.x+sB.w/2)/2;
+    sibs.forEach((w,k) => { const off=(k-(sibs.length-1)/2)*sp; w.x1=cx+off; w.x2=cx+off; w.spacing=sp; });
+}
 
-    with st.expander("Pump-01 (Coolant)"):
-        st.write("**Type:** Centrifugal Pump")
-        st.write(f"**Status:** {st.session_state.equipment_status['Pump-01']}")
-        st.write("**Connected to:** PLC-01, Motor-01")
+function deleteWire(index) {
+    wires.splice(index, 1);
+    selectedWire = null;
+}
 
-    with st.expander("Sensor-01 (Temperature)"):
-        st.write("**Type:** RTD Sensor")
-        st.write(f"**Status:** {st.session_state.equipment_status['Sensor-01']}")
-        st.write("**Connected to:** PLC-01")
+// ═══════════════════════════════════════════════════════
+// TOOLBAR
+// ═══════════════════════════════════════════════════════
+const COMP_TOOLS = ['attenuator','hemt','switch','isolator','circulator','filter'];
+const WIRE_TOOLS = ['dc','rf'];
 
-# --- Footer ---
-st.divider()
-st.caption("Starter template for an in-browser Python app. Replace the content above with your own logic and diagrams.")
-            `,
-            // Mount the app to the 'root' div we defined above
-            document.getElementById("root")
-        );
-    </script>
+function setTool(tool) {
+    currentTool = tool;
+    document.querySelectorAll('.tool-btn').forEach(b => { b.classList.remove('active'); b.classList.remove('active-comp'); });
+    const btn = document.getElementById('tool-'+tool);
+    const isComp = COMP_TOOLS.includes(tool);
+    const isDel  = tool==='delete';
+    btn.classList.add(isDel||isComp ? 'active-comp' : 'active');
+    if (isDel) btn.classList.add('active');
+
+    const labels = { dc:'DC Wire', rf:'RF Wire', delete:'Delete Mode',
+        attenuator:'Attenuator', hemt:'HEMT', switch:'Switch',
+        isolator:'Isolator', circulator:'Circulator', filter:'Filter' };
+    document.getElementById('selected-name').textContent = labels[tool]||tool;
+    document.getElementById('instruction').textContent =
+        WIRE_TOOLS.includes(tool) ? 'Click first stage, then second' :
+        tool==='delete' ? 'Click a wire or component to delete' :
+        'Click an RF wire to place';
+    selectedStage = null; redraw();
+}
+
+['dc','rf','attenuator','hemt','switch','isolator','circulator','filter','delete']
+    .forEach(t => document.getElementById('tool-'+t).addEventListener('click', ()=>setTool(t)));
+
+// ═══════════════════════════════════════════════════════
+// CANVAS CLICK
+// ═══════════════════════════════════════════════════════
+canvas.addEventListener('click', e => {
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX-rect.left)*(canvas.width/rect.width);
+    const my = (e.clientY-rect.top)*(canvas.height/rect.height);
+
+    // ── Delete mode ───────────────────────────────────
+    if (currentTool === 'delete') {
+        const ch = getComponentAt(mx, my);
+        if (ch !== null) {
+            wires[ch.wireIndex].components.splice(ch.compIndex, 1);
+            redraw(); return;
+        }
+        const wi = getWireAt(mx, my);
+        if (wi !== null) { deleteWire(wi); redraw(); return; }
+        return;
+    }
+
+    // ── Component placement ───────────────────────────
+    if (COMP_TOOLS.includes(currentTool)) {
+        const ch = getComponentAt(mx, my);
+        if (ch !== null) { openCompDialog(ch.wireIndex, ch.compIndex); return; }
+        const wi = getWireAt(mx, my);
+        if (wi !== null) {
+            const wire = wires[wi];
+            if (wire.type !== 'rf') return;
+            const frac = (my - wire.y1) / (wire.y2 - wire.y1);
+            const pos = frac < 1/3 ? 0.15 : frac > 2/3 ? 0.85 : 0.5;
+            if (!wire.components) wire.components = [];
+            wire.components.push({ type: currentTool, pos, value:'' });
+            redraw();
+            openCompDialog(wi, wire.components.length-1);
+        }
+        return;
+    }
+
+    // ── Wire tools ────────────────────────────────────
+    // Always open dialog if clicking a component even in wire mode
+    const ch = getComponentAt(mx, my);
+    if (ch !== null) { openCompDialog(ch.wireIndex, ch.compIndex); return; }
+
+    const wireIndex = getWireAt(mx, my);
+
+    if (selectedStage) {
+        if (wireIndex !== null) {
+            const ref = wires[wireIndex];
+            const selY = selectedStage.y + selectedStage.h/2;
+            const nearStageId = Math.abs(selY-ref.y1) <= Math.abs(selY-ref.y2) ? ref.stageA : ref.stageB;
+            const nearX       = Math.abs(selY-ref.y1) <= Math.abs(selY-ref.y2) ? ref.x1    : ref.x2;
+            const tgt = stages.find(s=>s.id===nearStageId);
+            if (tgt && tgt.id !== selectedStage.id) {
+                const nw = { type:currentTool, stageA:selectedStage.id, stageB:nearStageId,
+                    x1:nearX, y1:selectedStage.y+selectedStage.h/2,
+                    x2:nearX, y2:tgt.y+tgt.h/2, spacing:ref.spacing||18, components:[] };
+                if (currentTool==='rf') nw.ports=[];
+                selectedStage=null; wires.push(nw); redraw();
+            }
+            return;
+        }
+        const stage = getStageAt(mx, my);
+        if (!stage) { selectedStage=null; selectedWire=null; redraw(); return; }
+        const sp=18, off=nextOffset(selectedStage.id, stage.id, sp);
+        const nw = { type:currentTool, stageA:selectedStage.id, stageB:stage.id,
+            x1:selectedStage.x+selectedStage.w/2+off, y1:selectedStage.y+selectedStage.h/2,
+            x2:stage.x+stage.w/2+off, y2:stage.y+stage.h/2, spacing:sp, components:[] };
+        if (currentTool==='rf') nw.ports=[];
+        wires.push(nw); selectedStage=null; redraw(); return;
+    }
+
+    if (wireIndex !== null) {
+        selectedWire=wireIndex; selectedStage=null; redraw(); openWireDialog(wireIndex); return;
+    }
+    const stage = getStageAt(mx, my);
+    if (!stage) { selectedStage=null; selectedWire=null; redraw(); return; }
+    selectedStage=stage; selectedWire=null; redraw();
+});
+
+// ═══════════════════════════════════════════════════════
+// COMPONENT DIALOG (shared)
+// ═══════════════════════════════════════════════════════
+const compOverlay = document.getElementById('comp-dialog-overlay');
+let compWireIdx=null, compCompIdx=null;
+
+const COMP_META = {
+    attenuator: { title:'Attenuator',  valueLabel:'Attenuation (dB)', hasValue:true  },
+    hemt:       { title:'HEMT Amp',    valueLabel:'Gain (dB)',        hasValue:true  },
+    switch:     { title:'Switch',      valueLabel:'',                 hasValue:false },
+    isolator:   { title:'Isolator',    valueLabel:'Isolation (dB)',   hasValue:true  },
+    circulator: { title:'Circulator',  valueLabel:'Insertion loss (dB)', hasValue:true },
+    filter:     { title:'Filter',      valueLabel:'Cutoff (GHz)',     hasValue:true  },
+};
+
+function openCompDialog(wi, ci) {
+    compWireIdx=wi; compCompIdx=ci;
+    const comp = wires[wi].components[ci];
+    const meta = COMP_META[comp.type]||{ title:comp.type, valueLabel:'Value', hasValue:true };
+    document.getElementById('comp-dialog-title').textContent = meta.title;
+    const vrow = document.getElementById('comp-value-row');
+    vrow.style.display = meta.hasValue ? 'block' : 'none';
+    document.getElementById('comp-value-label').textContent = meta.valueLabel;
+    document.getElementById('comp-value').value = comp.value??'';
+    drawComponent(wires[wi], comp, true);
+    compOverlay.style.display='block';
+}
+
+document.getElementById('comp-save').addEventListener('click', ()=>{
+    if (compWireIdx!==null && compCompIdx!==null) {
+        const comp = wires[compWireIdx].components[compCompIdx];
+        const meta = COMP_META[comp.type]||{hasValue:true};
+        if (meta.hasValue) comp.value = document.getElementById('comp-value').value;
+    }
+    compOverlay.style.display='none'; compWireIdx=null; compCompIdx=null; redraw();
+});
+document.getElementById('comp-delete').addEventListener('click', ()=>{
+    if (compWireIdx!==null && compCompIdx!==null)
+        wires[compWireIdx].components.splice(compCompIdx,1);
+    compOverlay.style.display='none'; compWireIdx=null; compCompIdx=null; redraw();
+});
+document.getElementById('comp-cancel').addEventListener('click', ()=>{
+    compOverlay.style.display='none'; compWireIdx=null; compCompIdx=null; redraw();
+});
+compOverlay.addEventListener('click', e=>{ if(e.target===compOverlay){ compOverlay.style.display='none'; compWireIdx=null; compCompIdx=null; redraw(); }});
+
+// ═══════════════════════════════════════════════════════
+// DC DIALOG
+// ═══════════════════════════════════════════════════════
+const dcOverlay=document.getElementById('dc-dialog-overlay');
+const connCanvas=document.getElementById('connector-canvas');
+const connCtx=connCanvas.getContext('2d');
+const PIN_R=13, PIN_SP=34, TOP_P=13, BOT_P=12;
+
+function pinCenters() {
+    const c=[],W=connCanvas.width;
+    const ts=(W-(TOP_P-1)*PIN_SP)/2; for(let i=0;i<TOP_P;i++) c.push({pin:2*i+1,x:ts+i*PIN_SP,y:32});
+    const bs=(W-(BOT_P-1)*PIN_SP)/2; for(let i=0;i<BOT_P;i++) c.push({pin:2*i+2,x:bs+i*PIN_SP,y:78});
+    return c;
+}
+function drawConnector(ps) {
+    connCtx.clearRect(0,0,connCanvas.width,connCanvas.height);
+    connCtx.fillStyle='#d0d0d0'; connCtx.strokeStyle='#888'; connCtx.lineWidth=2;
+    connCtx.beginPath(); connCtx.roundRect(8,8,connCanvas.width-16,connCanvas.height-16,6); connCtx.fill(); connCtx.stroke();
+    pinCenters().forEach(({pin,x,y})=>{
+        const broken=ps[pin]==='broken';
+        connCtx.beginPath(); connCtx.arc(x,y,PIN_R,0,Math.PI*2);
+        connCtx.fillStyle=broken?'#fdecea':'#e8f5e9'; connCtx.fill();
+        connCtx.strokeStyle=broken?'#e74c3c':'#2ecc71'; connCtx.lineWidth=2; connCtx.stroke();
+        connCtx.fillStyle=broken?'#e74c3c':'#222'; connCtx.font=`bold ${pin>=10?9:10}px Arial`;
+        connCtx.textAlign='center'; connCtx.textBaseline='middle'; connCtx.fillText(String(pin),x,y);
+    });
+}
+connCanvas.addEventListener('click', e=>{
+    const r=connCanvas.getBoundingClientRect(), cx=e.clientX-r.left, cy=e.clientY-r.top;
+    for(const {pin,x,y} of pinCenters()) {
+        if(Math.hypot(cx-x,cy-y)<=PIN_R && selectedWire!==null) {
+            const ps=wires[selectedWire].pinStates;
+            ps[pin]=ps[pin]==='broken'?'connected':'broken'; drawConnector(ps); break;
+        }
+    }
+});
+document.getElementById('dc-dialog-save').addEventListener('click',()=>{
+    if(selectedWire!==null) wires[selectedWire].name=document.getElementById('dc-dialog-name').value.trim();
+    dcOverlay.style.display='none'; selectedWire=null; redraw();
+});
+document.getElementById('dc-dialog-delete').addEventListener('click',()=>{
+    if(selectedWire!==null) deleteWire(selectedWire);
+    dcOverlay.style.display='none'; redraw();
+});
+document.getElementById('dc-dialog-cancel').addEventListener('click',()=>{ dcOverlay.style.display='none'; selectedWire=null; redraw(); });
+dcOverlay.addEventListener('click',e=>{ if(e.target===dcOverlay){ dcOverlay.style.display='none'; selectedWire=null; redraw(); }});
+
+// ═══════════════════════════════════════════════════════
+// RF DIALOG
+// ═══════════════════════════════════════════════════════
+const rfOverlay=document.getElementById('rf-dialog-overlay');
+const rfCanvas=document.getElementById('rf-connector-canvas');
+const rfCtx=rfCanvas.getContext('2d');
+const RF_PR=16, RF_RINGS=[45,85,130,165], RF_CAP=[6,10,14,6];
+const RF_MAX=RF_CAP.reduce((a,b)=>a+b,0);
+let rfSelectedPort=null, rfWireIndex=null, rfPortsBackup=null, rfNameBackup='';
+
+function rfPortPositions(count) {
+    const cx=rfCanvas.width/2, cy=rfCanvas.height/2, pos=[]; let rem=count, pi=0;
+    for(let ring=0;ring<RF_RINGS.length&&rem>0;ring++) {
+        const n=Math.min(rem,RF_CAP[ring]), r=RF_RINGS[ring];
+        for(let i=0;i<n;i++) { const a=(2*Math.PI*i/n)-Math.PI/2; pos.push({portIndex:pi++,x:cx+r*Math.cos(a),y:cy+r*Math.sin(a)}); rem--; }
+    }
+    return pos;
+}
+function updatePortCountLabel() {
+    if(rfWireIndex===null) return;
+    const n=wires[rfWireIndex].ports.length;
+    document.getElementById('rf-port-count-label').textContent=`${n} port${n!==1?'s':''} (max ${RF_MAX})`;
+    document.getElementById('rf-add-port-btn').disabled=n>=RF_MAX;
+}
+function drawRfConnector(ports, highlight) {
+    rfCtx.clearRect(0,0,rfCanvas.width,rfCanvas.height);
+    const cx=rfCanvas.width/2, cy=rfCanvas.height/2;
+    RF_RINGS.forEach(r=>{ rfCtx.beginPath(); rfCtx.arc(cx,cy,r,0,Math.PI*2); rfCtx.strokeStyle='#e0e0e0'; rfCtx.lineWidth=1; rfCtx.stroke(); });
+    rfCtx.beginPath(); rfCtx.arc(cx,cy,5,0,Math.PI*2); rfCtx.fillStyle='#ccc'; rfCtx.fill();
+    rfPortPositions(ports.length).forEach(({portIndex:pi,x,y})=>{
+        const p=ports[pi], sel=pi===highlight;
+        rfCtx.beginPath(); rfCtx.arc(x,y,RF_PR,0,Math.PI*2);
+        rfCtx.fillStyle=p.broken?'#fdecea':'#e8f5e9'; rfCtx.fill();
+        rfCtx.strokeStyle=sel?'#3498db':(p.broken?'#e74c3c':'#2ecc71'); rfCtx.lineWidth=sel?3:2; rfCtx.stroke();
+        const ha=p.attenuation!==undefined&&p.attenuation!=='';
+        rfCtx.fillStyle=p.broken?'#e74c3c':'#333'; rfCtx.font='bold 9px Arial'; rfCtx.textAlign='center'; rfCtx.textBaseline='middle';
+        rfCtx.fillText(String(pi+1),x,ha?y-5:y);
+        if(ha){ rfCtx.font='8px Arial'; rfCtx.fillStyle='#555'; rfCtx.fillText(`${p.attenuation}dB`,x,y+5); }
+    });
+}
+function getRfPortAt(mx,my,count) {
+    for(const {portIndex,x,y} of rfPortPositions(count)) if(Math.hypot(mx-x,my-y)<=RF_PR) return portIndex;
+    return null;
+}
+function refreshRfCanvas() { if(rfWireIndex!==null) drawRfConnector(wires[rfWireIndex].ports, rfSelectedPort); }
+
+rfCanvas.addEventListener('click', e=>{
+    if(rfWireIndex===null) return;
+    const r=rfCanvas.getBoundingClientRect(), mx=e.clientX-r.left, my=e.clientY-r.top;
+    const ports=wires[rfWireIndex].ports, pi=getRfPortAt(mx,my,ports.length);
+    if(pi===null) return;
+    rfSelectedPort=pi; const p=ports[pi];
+    document.getElementById('rf-port-detail').style.display='block';
+    document.getElementById('rf-port-detail-title').textContent=`Port ${pi+1}${p.name?' — '+p.name:''}`;
+    document.getElementById('rf-port-label').value=p.name||'';
+    document.getElementById('rf-port-atten').value=p.attenuation??'';
+    refreshRfCanvas();
+});
+document.getElementById('rf-port-label').addEventListener('input',()=>{
+    if(rfWireIndex===null||rfSelectedPort===null) return;
+    const p=wires[rfWireIndex].ports[rfSelectedPort]; p.name=document.getElementById('rf-port-label').value;
+    document.getElementById('rf-port-detail-title').textContent=`Port ${rfSelectedPort+1}${p.name?' — '+p.name:''}`;
+    refreshRfCanvas();
+});
+document.getElementById('rf-port-atten').addEventListener('input',()=>{
+    if(rfWireIndex===null||rfSelectedPort===null) return;
+    wires[rfWireIndex].ports[rfSelectedPort].attenuation=document.getElementById('rf-port-atten').value; refreshRfCanvas();
+});
+document.getElementById('rf-port-toggle').addEventListener('click',()=>{
+    if(rfWireIndex===null||rfSelectedPort===null) return;
+    wires[rfWireIndex].ports[rfSelectedPort].broken=!wires[rfWireIndex].ports[rfSelectedPort].broken; refreshRfCanvas();
+});
+document.getElementById('rf-add-port-btn').addEventListener('click',()=>{
+    if(rfWireIndex===null) return;
+    const ports=wires[rfWireIndex].ports; if(ports.length>=RF_MAX) return;
+    ports.push({name:'',attenuation:'',broken:false}); rfSelectedPort=null;
+    document.getElementById('rf-port-detail').style.display='none'; updatePortCountLabel(); refreshRfCanvas();
+});
+document.getElementById('rf-remove-port-btn').addEventListener('click',()=>{
+    if(rfWireIndex===null||rfSelectedPort===null) return;
+    wires[rfWireIndex].ports.splice(rfSelectedPort,1); rfSelectedPort=null;
+    document.getElementById('rf-port-detail').style.display='none'; updatePortCountLabel(); refreshRfCanvas();
+});
+document.getElementById('rf-spacing-slider').addEventListener('input',function(){
+    const sp=parseInt(this.value); document.getElementById('rf-spacing-val').textContent=sp+' px';
+    if(rfWireIndex===null) return;
+    const ref=wires[rfWireIndex]; ref.spacing=sp; repositionSiblings(ref.stageA,ref.stageB,sp); redraw();
+});
+document.getElementById('rf-dialog-save').addEventListener('click',()=>{
+    if(rfWireIndex!==null) wires[rfWireIndex].name=document.getElementById('rf-dialog-name').value.trim();
+    rfPortsBackup=null; rfOverlay.style.display='none'; rfSelectedPort=null; rfWireIndex=null; selectedWire=null; redraw();
+});
+document.getElementById('rf-dialog-delete').addEventListener('click',()=>{
+    if(rfWireIndex!==null) deleteWire(rfWireIndex);
+    rfPortsBackup=null; rfOverlay.style.display='none'; rfSelectedPort=null; rfWireIndex=null; redraw();
+});
+function cancelRfDialog() {
+    if(rfWireIndex!==null&&rfPortsBackup!==null){ wires[rfWireIndex].ports=rfPortsBackup; wires[rfWireIndex].name=rfNameBackup; }
+    rfPortsBackup=null; rfOverlay.style.display='none'; rfSelectedPort=null; rfWireIndex=null; selectedWire=null; redraw();
+}
+document.getElementById('rf-dialog-cancel').addEventListener('click', cancelRfDialog);
+rfOverlay.addEventListener('click', e=>{ if(e.target===rfOverlay) cancelRfDialog(); });
+
+// ═══════════════════════════════════════════════════════
+// OPEN WIRE DIALOG
+// ═══════════════════════════════════════════════════════
+function openWireDialog(index) {
+    const wire=wires[index];
+    if(wire.type==='rf') {
+        rfWireIndex=index; if(!wire.ports) wire.ports=[];
+        rfPortsBackup=wire.ports.map(p=>({...p})); rfNameBackup=wire.name||'';
+        const sp=wire.spacing||18;
+        document.getElementById('rf-dialog-name').value=wire.name||'';
+        document.getElementById('rf-spacing-slider').value=sp;
+        document.getElementById('rf-spacing-val').textContent=sp+' px';
+        document.getElementById('rf-port-detail').style.display='none'; rfSelectedPort=null;
+        updatePortCountLabel(); rfOverlay.style.display='block'; drawRfConnector(wire.ports,null);
+    } else {
+        document.getElementById('dc-dialog-name').value=wire.name||'';
+        if(!wire.pinStates){ wire.pinStates={}; for(let i=1;i<=25;i++) wire.pinStates[i]='connected'; }
+        drawConnector(wire.pinStates); dcOverlay.style.display='block';
+    }
+}
+
+drawStages();
+</script>
 </body>
 </html>
