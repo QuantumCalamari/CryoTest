@@ -3,8 +3,42 @@
 <head>
     <title>Cryostat Diagram</title>
     <style>
-        body { margin:0; padding:20px; background:#f0f0f0; font-family:sans-serif; }
-        #canvas { width:1600px; height:1200px; background:white; border:1px solid #ccc; }
+        body { margin:0; padding:20px 20px 20px 260px; background:#f0f0f0; font-family:sans-serif; }
+        #canvas { width:1600px; height:1200px; background:white; border:1px solid #ccc; display:block; }
+
+        /* ── Fridge sidebar ── */
+        #fridge-sidebar {
+            position:fixed; top:0; left:0; bottom:0; width:240px;
+            background:#1e2a38; color:#cdd6e0;
+            display:flex; flex-direction:column; font-size:13px; z-index:50;
+        }
+        #fs-header { padding:14px 12px 10px; border-bottom:1px solid #2e3f52; }
+        #fs-header h2 { margin:0 0 10px; font-size:15px; color:#ecf0f1; }
+        #btn-new-fridge {
+            width:100%; padding:8px; background:#2ecc71; color:white; border:none;
+            border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold; margin-bottom:6px;
+        }
+        #btn-new-fridge:hover { background:#27ae60; }
+        #fridge-list { flex:1; overflow-y:auto; padding:6px 0; }
+        .fi { display:flex; align-items:center; margin:2px 8px; border-radius:4px; overflow:hidden; }
+        .fi:hover { background:#2e3f52; }
+        .fi.active { background:#2980b9; }
+        .fi-name {
+            flex:1; background:none; border:none; color:#cdd6e0; text-align:left;
+            padding:8px 10px; cursor:pointer; font-size:12px;
+            white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+        }
+        .fi.active .fi-name { color:white; font-weight:bold; }
+        .fi-del { background:none; border:none; color:#4a5568; cursor:pointer; padding:6px 8px; font-size:12px; flex-shrink:0; }
+        .fi-del:hover { color:#e74c3c; }
+        #fs-footer { padding:10px 12px; border-top:1px solid #2e3f52; display:flex; flex-direction:column; gap:6px; }
+        .fs-btn { width:100%; padding:8px; border:none; border-radius:4px; cursor:pointer; font-size:12px; font-weight:bold; }
+        #btn-save-json { background:#3498db; color:white; }
+        #btn-save-json:hover { background:#2980b9; }
+        #btn-load-json { background:#2e3f52; color:#cdd6e0; }
+        #btn-load-json:hover { background:#3d5166; }
+        #file-input { display:none; }
+        #fs-no-fridge { padding:20px 12px; color:#4a5568; font-size:12px; text-align:center; line-height:1.7; }
 
         #toolbar {
             position:fixed; top:20px; right:20px;
@@ -77,9 +111,32 @@
         .rf-add-row button { padding:5px 12px; font-size:12px; cursor:pointer; border-radius:4px; border:1px solid #2ecc71; background:#e8f5e9; color:#27ae60; }
         .rf-add-row span { font-size:11px; color:#888; }
         #comp-dialog { width:300px; }
+        .sd-tab {
+            padding:7px 16px; font-size:12px; cursor:pointer; border:none;
+            background:none; border-bottom:2px solid transparent; margin-bottom:-2px;
+            color:#777; font-weight:500;
+        }
+        .sd-tab:hover { color:#333; }
+        .sd-tab.active { color:#3498db; border-bottom-color:#3498db; font-weight:bold; }
     </style>
 </head>
 <body>
+
+<div id="fridge-sidebar">
+    <div id="fs-header">
+        <h2>🧊 Cryostats</h2>
+        <button id="btn-new-fridge">＋ New Fridge</button>
+    </div>
+    <div id="fridge-list">
+        <div id="fs-no-fridge">No fridges yet.<br>Click <strong>New Fridge</strong><br>to get started.</div>
+    </div>
+    <div id="fs-footer">
+        <button class="fs-btn" id="btn-save-json">💾 Save data file</button>
+        <button class="fs-btn" id="btn-load-json">📂 Load data file</button>
+        <input type="file" id="file-input" accept=".json">
+    </div>
+</div>
+
 <canvas id="canvas" width="1600" height="1200"></canvas>
 
 <div id="toolbar">
@@ -94,6 +151,9 @@
     <button class="tool-btn" id="tool-isolator">→| Isolator</button>
     <button class="tool-btn" id="tool-circulator">↻ Circulator</button>
     <button class="tool-btn" id="tool-filter">⋈ Filter</button>
+
+    <h4>Samples</h4>
+    <button class="tool-btn" id="tool-sample">◈ Add Sample</button>
 
     <h4>Edit</h4>
     <button class="tool-btn delete-btn" id="tool-delete">✕ Delete Mode</button>
@@ -148,8 +208,8 @@
         </div>
         <div id="rf-spacing-row">
             <label>Wire spacing:</label>
-            <input type="range" id="rf-spacing-slider" min="8" max="60" value="18" step="1">
-            <span id="rf-spacing-val">18 px</span>
+            <input type="range" id="rf-spacing-slider" min="8" max="120" value="40" step="1">
+            <span id="rf-spacing-val">40 px</span>
         </div>
         <div id="rf-port-detail" style="display:none;">
             <h4>
@@ -190,7 +250,218 @@
     </div>
 </div>
 
+<!-- Sample editor dialog -->
+<div id="sample-dialog-overlay" class="dialog-overlay">
+  <div id="sample-dialog" class="dialog-box" style="width:640px; max-height:90vh; overflow-y:auto;">
+    <h3 style="display:flex;justify-content:space-between;align-items:center;">
+      <span>Sample: <input type="text" id="sd-name" style="font-size:14px;font-weight:bold;border:none;border-bottom:1px solid #ccc;outline:none;width:200px;" placeholder="Sample name"></span>
+      <button id="sd-close" style="background:none;border:none;font-size:18px;cursor:pointer;color:#888;">✕</button>
+    </h3>
+
+    <!-- Tabs -->
+    <div id="sd-tabs" style="display:flex;gap:0;border-bottom:2px solid #ddd;margin-bottom:12px;">
+      <button class="sd-tab active" data-tab="pads">Bond Pads</button>
+      <button class="sd-tab" data-tab="notes">Notes</button>
+      <button class="sd-tab" data-tab="connections">Connections</button>
+    </div>
+
+    <!-- Tab: Bond Pads -->
+    <div id="sd-tab-pads" class="sd-tab-content">
+      <div style="display:flex;gap:10px;align-items:center;margin-bottom:10px;font-size:12px;color:#555;">
+        <span>Grid:</span>
+        <input type="number" id="sd-grid-w" min="2" max="20" value="8" style="width:46px;padding:3px;font-size:12px;">
+        <span>×</span>
+        <input type="number" id="sd-grid-h" min="2" max="20" value="8" style="width:46px;padding:3px;font-size:12px;">
+        <button id="sd-grid-apply" style="padding:3px 10px;font-size:11px;cursor:pointer;border:1px solid #999;border-radius:3px;background:#f0f0f0;">Apply</button>
+        <span style="margin-left:auto;">
+          <button id="sd-mode-pad" class="sd-mode-btn active-mode" style="padding:3px 10px;font-size:11px;cursor:pointer;border:1px solid #8e44ad;border-radius:3px 0 0 3px;background:#e8daef;color:#4a235a;font-weight:bold;">◈ Pads</button><button id="sd-mode-wire" class="sd-mode-btn" style="padding:3px 10px;font-size:11px;cursor:pointer;border:1px solid #8e44ad;border-left:none;border-radius:0 3px 3px 0;background:#f8f4ff;color:#4a235a;">— Wire</button>
+        </span>
+      </div>
+      <div style="font-size:11px;color:#888;margin-bottom:6px;" id="sd-mode-hint">Click a cell to add/remove a pad</div>
+      <canvas id="sd-grid-canvas" style="border:1px solid #ddd;display:block;cursor:crosshair;"></canvas>
+      <!-- Pad label editor -->
+      <div id="sd-pad-editor" style="display:none;margin-top:10px;padding:8px;background:#f9f9f9;border:1px solid #ddd;border-radius:4px;">
+        <span style="font-size:12px;color:#555;">Selected pad label: </span>
+        <input type="text" id="sd-pad-label" style="padding:4px;font-size:12px;width:160px;border:1px solid #ccc;border-radius:3px;" placeholder="e.g. Gate 1">
+        <button id="sd-pad-label-set" style="padding:4px 10px;font-size:11px;cursor:pointer;border:1px solid #2ecc71;border-radius:3px;background:#e8f5e9;color:#27ae60;margin-left:4px;">Set</button>
+        <button id="sd-pad-remove" style="padding:4px 10px;font-size:11px;cursor:pointer;border:1px solid #e74c3c;border-radius:3px;background:#fdecea;color:#c0392b;margin-left:4px;">Remove pad</button>
+      </div>
+    </div>
+
+    <!-- Tab: Notes -->
+    <div id="sd-tab-notes" class="sd-tab-content" style="display:none;">
+      <p style="font-size:12px;color:#888;margin:0 0 8px;">Free notes on internal connections, on-chip routing, etc.</p>
+      <textarea id="sd-notes" style="width:100%;height:200px;box-sizing:border-box;font-size:12px;padding:8px;border:1px solid #ccc;border-radius:4px;resize:vertical;" placeholder="e.g. Pad A (Gate) → qubit 1 drive&#10;Pad B (Ground) → ground plane"></textarea>
+    </div>
+
+    <!-- Tab: Connections -->
+    <div id="sd-tab-connections" class="sd-tab-content" style="display:none;">
+      <div style="font-size:12px;color:#555;margin-bottom:8px;">Map a bond pad to a pin/port on a wire connected to this sample.</div>
+      <!-- Step 1: pick pad -->
+      <div style="display:flex;gap:8px;align-items:center;margin-bottom:8px;flex-wrap:wrap;">
+        <label style="font-size:12px;min-width:80px;">Bond pad:</label>
+        <select id="sd-conn-pad" style="flex:1;padding:5px;font-size:12px;border:1px solid #ccc;border-radius:3px;"></select>
+        <label style="font-size:12px;min-width:60px;">Wire:</label>
+        <select id="sd-conn-wire" style="flex:1;padding:5px;font-size:12px;border:1px solid #ccc;border-radius:3px;"></select>
+      </div>
+      <!-- Step 2: visual connector -->
+      <div id="sd-conn-visual" style="display:none;">
+        <div style="font-size:12px;color:#555;margin-bottom:6px;" id="sd-conn-visual-label">Click a pin to assign:</div>
+        <canvas id="sd-conn-canvas" style="border:1px solid #ddd;display:block;cursor:pointer;"></canvas>
+      </div>
+      <!-- Connection list -->
+      <div style="margin-top:12px;">
+        <div style="font-size:12px;font-weight:bold;color:#333;margin-bottom:6px;">Assigned connections:</div>
+        <div id="sd-conn-list" style="font-size:12px;color:#555;max-height:140px;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+    <div class="dialog-buttons" style="margin-top:14px;">
+      <button id="sd-save" class="btn-primary">Save</button>
+      <button id="sd-delete" class="btn-danger">Delete Sample</button>
+    </div>
+  </div>
+</div>
+
 <script>
+// ═══════════════════════════════════════════════════════
+// FRIDGE MANAGEMENT
+// Data model: fridges = [{id, name, wires:[]}]
+// currentFridgeId tracks which fridge is loaded on canvas
+// ═══════════════════════════════════════════════════════
+let fridges = [];
+let currentFridgeId = null;
+
+function genId() {
+    return 'f' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+}
+
+function renderFridgeList() {
+    const list = document.getElementById('fridge-list');
+    const none = document.getElementById('fs-no-fridge');
+
+    // Remove only fridge rows (not the no-fridge message element)
+    list.querySelectorAll('.fi').forEach(function(el) { el.remove(); });
+
+    if (fridges.length === 0) {
+        none.style.display = 'block';
+        return;
+    }
+    none.style.display = 'none';
+    fridges.forEach(function(f) {
+        const row = document.createElement('div');
+        row.className = 'fi' + (f.id === currentFridgeId ? ' active' : '');
+
+        const nameBtn = document.createElement('button');
+        nameBtn.className = 'fi-name';
+        nameBtn.textContent = f.name;
+        nameBtn.onclick = function() { switchFridge(f.id); };
+
+        const delBtn = document.createElement('button');
+        delBtn.className = 'fi-del';
+        delBtn.title = 'Delete';
+        delBtn.textContent = '✕';
+        delBtn.onclick = function(e) {
+            e.stopPropagation();
+            if (!confirm('Delete "' + f.name + '"?')) return;
+            fridges = fridges.filter(function(x) { return x.id !== f.id; });
+            if (currentFridgeId === f.id) {
+                currentFridgeId = null;
+                wires = [];
+                redraw();
+            }
+            renderFridgeList();
+        };
+
+        row.appendChild(nameBtn);
+        row.appendChild(delBtn);
+        list.appendChild(row);
+    });
+}
+
+function switchFridge(id) {
+    // Save current wires back to current fridge before switching
+    if (currentFridgeId) {
+        var cur = fridges.find(function(f) { return f.id === currentFridgeId; });
+        if (cur) {
+            cur.wires = JSON.parse(JSON.stringify(wires));
+            cur.samples = JSON.parse(JSON.stringify(samples));
+            cur.sampleConnections = JSON.parse(JSON.stringify(sampleConnections));
+        }
+    }
+    currentFridgeId = id;
+    var f = fridges.find(function(f) { return f.id === id; });
+    wires = f ? JSON.parse(JSON.stringify(f.wires || [])) : [];
+    samples = f ? JSON.parse(JSON.stringify(f.samples || [])) : [];
+    sampleConnections = f ? JSON.parse(JSON.stringify(f.sampleConnections || [])) : [];
+    selectedWire = null;
+    selectedStage = null;
+    selectedSampleId = null;
+    dragState = null;
+    renderFridgeList();
+    redraw();
+}
+
+function newFridge() {
+    var name = prompt('Fridge name:', 'Fridge ' + (fridges.length + 1));
+    if (!name || !name.trim()) return;
+    var f = { id: genId(), name: name.trim(), wires: [] };
+    fridges.push(f);
+    switchFridge(f.id);
+}
+
+function saveCurrentWires() {
+    if (!currentFridgeId) return;
+    var cur = fridges.find(function(f) { return f.id === currentFridgeId; });
+    if (cur) {
+        cur.wires = JSON.parse(JSON.stringify(wires));
+        cur.samples = JSON.parse(JSON.stringify(samples));
+        cur.sampleConnections = JSON.parse(JSON.stringify(sampleConnections));
+    }
+}
+
+function saveJson() {
+    saveCurrentWires();
+    var data = JSON.stringify({ fridges: fridges }, null, 2);
+    var blob = new Blob([data], { type: 'application/json' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'cryostats.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function loadJson(text) {
+    try {
+        var data = JSON.parse(text);
+        if (!data.fridges || !Array.isArray(data.fridges)) throw new Error('Invalid format');
+        fridges = data.fridges;
+        currentFridgeId = null;
+        wires = [];
+        renderFridgeList();
+        if (fridges.length > 0) switchFridge(fridges[0].id);
+    } catch(e) {
+        alert('Could not load file: ' + e.message);
+    }
+}
+
+document.getElementById('btn-new-fridge').addEventListener('click', newFridge);
+
+document.getElementById('btn-save-json').addEventListener('click', saveJson);
+
+document.getElementById('btn-load-json').addEventListener('click', function() {
+    document.getElementById('file-input').click();
+});
+
+document.getElementById('file-input').addEventListener('change', function(e) {
+    var file = e.target.files[0];
+    if (!file) return;
+    var reader = new FileReader();
+    reader.onload = function(ev) { loadJson(ev.target.result); };
+    reader.readAsText(file);
+    e.target.value = '';
+});
+
 const canvas = document.getElementById('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -207,6 +478,566 @@ let currentTool = 'dc';
 let selectedStage = null;
 let wires = [];
 let selectedWire = null;
+
+// ═══════════════════════════════════════════════════════
+// SAMPLES
+// Each sample: { id, name, stageId, x, y }
+// Sample connections: sampleConnections = [{ sampleId, wireIndex, elbowY }]
+// ═══════════════════════════════════════════════════════
+let samples = [];
+let sampleConnections = []; // L-shaped wire links from wire → sample
+
+const SAMPLE_W = 60, SAMPLE_H = 30;
+const SAMPLE_DROOP = 40; // how far below the stage bottom the sample sits
+
+let selectedSampleId = null; // when in sample tool, tracks selected sample for wiring
+
+function genSampleId() { return 's' + Date.now().toString(36) + Math.random().toString(36).slice(2,5); }
+
+function getSampleAt(mx, my) {
+    for (const s of samples) {
+        if (mx >= s.x - SAMPLE_W/2 && mx <= s.x + SAMPLE_W/2 &&
+            my >= s.y - SAMPLE_H/2 && my <= s.y + SAMPLE_H/2) return s;
+    }
+    return null;
+}
+
+function drawSample(s) {
+    const sel = s.id === selectedSampleId;
+    ctx.fillStyle = '#f8f4ff';
+    ctx.strokeStyle = sel ? '#e74c3c' : '#8e44ad';
+    ctx.lineWidth = sel ? 2.5 : 1.5;
+    ctx.beginPath();
+    ctx.roundRect(s.x - SAMPLE_W/2, s.y - SAMPLE_H/2, SAMPLE_W, SAMPLE_H, 4);
+    ctx.fill(); ctx.stroke();
+    ctx.fillStyle = '#4a235a';
+    ctx.font = 'bold 11px Arial';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(s.name || 'Sample', s.x, s.y - 4);
+    // Pad count hint
+    const pCount = s.pads ? s.pads.length : 0;
+    if (pCount > 0) {
+        ctx.font = '9px Arial'; ctx.fillStyle = '#7d3c98';
+        ctx.fillText(pCount + ' pads', s.x, s.y + 8);
+    }
+}
+
+function drawSampleConnection(sc) {
+    const sample = samples.find(s => s.id === sc.sampleId);
+    const wire = wires[sc.wireIndex];
+    if (!sample || !wire) return;
+    const wx = wire.x1;
+    const wy = wire.y1 + sc.wirePos * (wire.y2 - wire.y1);
+    const elbowY = sc.elbowY;
+    const sx = sample.x;
+    const sy = sample.y - SAMPLE_H/2;
+    ctx.strokeStyle = wire.type === 'dc' ? '#27ae60' : '#e67e22';
+    ctx.lineWidth = 1.5;
+    ctx.setLineDash([4, 3]);
+    ctx.beginPath();
+    ctx.moveTo(wx, wy); ctx.lineTo(wx, elbowY); ctx.lineTo(sx, elbowY); ctx.lineTo(sx, sy);
+    ctx.stroke();
+    ctx.setLineDash([]);
+}
+
+function drawSamples() {
+    sampleConnections.forEach(sc => drawSampleConnection(sc));
+    samples.forEach(s => drawSample(s));
+}
+
+function placeSampleOnStage(stage, gridW, gridH) {
+    const existing = samples.filter(s => s.stageId === stage.id);
+    const startX = stage.x + stage.w/2 + existing.length * (SAMPLE_W + 30);
+    const sy = stage.y + stage.h + SAMPLE_DROOP;
+    const ns = {
+        id: genSampleId(),
+        name: 'Sample ' + (samples.length + 1),
+        stageId: stage.id,
+        x: startX, y: sy,
+        gridW: gridW || 8, gridH: gridH || 8,
+        pads: [],       // [{col, row, label}]
+        notes: '',
+        pinConnections: [] // [{padLabel, wireIndex, pinKey, pinLabel}]
+    };
+    samples.push(ns);
+    return ns;
+}
+
+function deleteSample(id) {
+    samples = samples.filter(s => s.id !== id);
+    sampleConnections = sampleConnections.filter(sc => sc.sampleId !== id);
+    if (selectedSampleId === id) selectedSampleId = null;
+}
+
+// ═══════════════════════════════════════════════════════
+// SAMPLE EDITOR DIALOG
+// ═══════════════════════════════════════════════════════
+const sampleOverlay = document.getElementById('sample-dialog-overlay');
+let editingSampleId = null;
+let sdSelectedPad = null; // {col, row} of selected pad in grid editor
+
+// ── Tab switching ─────────────────────────────────────
+document.querySelectorAll('.sd-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+        document.querySelectorAll('.sd-tab').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.sd-tab-content').forEach(c => c.style.display = 'none');
+        btn.classList.add('active');
+        document.getElementById('sd-tab-' + btn.dataset.tab).style.display = 'block';
+        if (btn.dataset.tab === 'connections') populateConnTab();
+        if (btn.dataset.tab === 'pads') drawSdGrid();
+    });
+});
+
+// ── Grid canvas ───────────────────────────────────────
+const sdGridCanvas = document.getElementById('sd-grid-canvas');
+const sdGridCtx    = sdGridCanvas.getContext('2d');
+const CELL = 36; // px per cell
+let sdGridMode = 'pad'; // 'pad' or 'wire'
+let sdWireFrom = null;  // {col, row} — first pad clicked when drawing a wire
+
+document.getElementById('sd-mode-pad').addEventListener('click', () => {
+    sdGridMode = 'pad'; sdWireFrom = null;
+    document.getElementById('sd-mode-pad').style.background = '#e8daef';
+    document.getElementById('sd-mode-pad').style.fontWeight = 'bold';
+    document.getElementById('sd-mode-wire').style.background = '#f8f4ff';
+    document.getElementById('sd-mode-wire').style.fontWeight = 'normal';
+    document.getElementById('sd-mode-hint').textContent = 'Click a cell to add/remove a pad';
+    drawSdGrid();
+});
+document.getElementById('sd-mode-wire').addEventListener('click', () => {
+    sdGridMode = 'wire'; sdWireFrom = null; sdSelectedPad = null;
+    document.getElementById('sd-mode-pad').style.background = '#f8f4ff';
+    document.getElementById('sd-mode-pad').style.fontWeight = 'normal';
+    document.getElementById('sd-mode-wire').style.background = '#e8daef';
+    document.getElementById('sd-mode-wire').style.fontWeight = 'bold';
+    document.getElementById('sd-mode-hint').textContent = 'Click first pad, then second pad to draw a wire between them';
+    document.getElementById('sd-pad-editor').style.display = 'none';
+    drawSdGrid();
+});
+
+function getSampleBeingEdited() {
+    return editingSampleId ? samples.find(s => s.id === editingSampleId) : null;
+}
+
+function sdGridResize() {
+    const s = getSampleBeingEdited(); if (!s) return;
+    // Extra margin around grid for connection label stubs
+    const MARGIN = 80;
+    sdGridCanvas.width  = s.gridW * CELL + 1 + MARGIN * 2;
+    sdGridCanvas.height = s.gridH * CELL + 1 + MARGIN * 2;
+    sdGridCanvas._margin = MARGIN;
+}
+
+// Returns pixel centre of a pad cell (accounting for margin offset)
+function padPixel(col, row) {
+    const m = sdGridCanvas._margin || 80;
+    return { x: m + col * CELL + CELL/2, y: m + row * CELL + CELL/2 };
+}
+
+function drawSdGrid() {
+    const s = getSampleBeingEdited(); if (!s) return;
+    sdGridResize();
+    const M = sdGridCanvas._margin || 80;
+    const W = s.gridW, H = s.gridH;
+    sdGridCtx.clearRect(0, 0, sdGridCanvas.width, sdGridCanvas.height);
+
+    // Faint chip background
+    sdGridCtx.fillStyle = '#fafafa';
+    sdGridCtx.fillRect(M, M, W*CELL, H*CELL);
+
+    // Grid lines
+    sdGridCtx.strokeStyle = '#e8e8e8'; sdGridCtx.lineWidth = 1;
+    for (let c = 0; c <= W; c++) {
+        sdGridCtx.beginPath(); sdGridCtx.moveTo(M+c*CELL+.5, M); sdGridCtx.lineTo(M+c*CELL+.5, M+H*CELL); sdGridCtx.stroke();
+    }
+    for (let r = 0; r <= H; r++) {
+        sdGridCtx.beginPath(); sdGridCtx.moveTo(M, M+r*CELL+.5); sdGridCtx.lineTo(M+W*CELL, M+r*CELL+.5); sdGridCtx.stroke();
+    }
+
+    // ── Schematic wires between pads ──────────────────
+    (s.padWires || []).forEach(pw => {
+        const a = padPixel(pw.fromCol, pw.fromRow);
+        const b = padPixel(pw.toCol,   pw.toRow);
+        sdGridCtx.strokeStyle = '#c0392b'; sdGridCtx.lineWidth = 2;
+        sdGridCtx.beginPath(); sdGridCtx.moveTo(a.x, a.y); sdGridCtx.lineTo(b.x, b.y); sdGridCtx.stroke();
+    });
+
+    // ── Connection stubs (wire name annotations) ──────
+    // For each pad, collect all pinConnections that reference it
+    const pinConns = s.pinConnections || [];
+    (s.pads || []).forEach(p => {
+        const mine = pinConns.filter(c => {
+            const pl = p.label || ('(' + p.col + ',' + p.row + ')');
+            return c.padLabel === pl;
+        });
+        if (mine.length === 0) return;
+        const { x: px, y: py } = padPixel(p.col, p.row);
+
+        // Determine which side of the chip edge is closest → stub goes that way
+        // Left edge: col===0, right: col===W-1, top: row===0, bottom: row===H-1
+        // For interior pads just stub upward
+        let dx = 0, dy = -1;
+        if (p.col === 0)   { dx = -1; dy = 0; }
+        else if (p.col === W-1) { dx = 1; dy = 0; }
+        else if (p.row === 0)   { dx = 0; dy = -1; }
+        else if (p.row === H-1) { dx = 0; dy = 1; }
+
+        const STUB = 18;
+        mine.forEach((c, i) => {
+            const offset = (i - (mine.length-1)/2) * 14;
+            // Perpendicular offset
+            const ox = dy * offset, oy = -dx * offset;
+            const x1 = px + ox, y1 = py + oy;
+            const x2 = px + dx * STUB + ox, y2 = py + dy * STUB + oy;
+
+            const isRf = wires[c.wireIndex]?.type === 'rf';
+            sdGridCtx.strokeStyle = isRf ? '#e67e22' : '#27ae60';
+            sdGridCtx.lineWidth = 1.5;
+            sdGridCtx.beginPath(); sdGridCtx.moveTo(x1, y1); sdGridCtx.lineTo(x2, y2); sdGridCtx.stroke();
+
+            // Label at stub end
+            sdGridCtx.fillStyle = isRf ? '#b7510a' : '#1a6630';
+            sdGridCtx.font = 'bold 8px Arial';
+            sdGridCtx.textAlign = dx > 0 ? 'left' : dx < 0 ? 'right' : 'center';
+            sdGridCtx.textBaseline = dy > 0 ? 'top' : dy < 0 ? 'bottom' : 'middle';
+            const label = c.wireName + ' ' + c.pinLabel;
+            sdGridCtx.fillText(label, x2 + dx*2, y2 + dy*2);
+        });
+    });
+
+    // ── Pads ──────────────────────────────────────────
+    (s.pads || []).forEach(p => {
+        const isSel = sdSelectedPad && sdSelectedPad.col === p.col && sdSelectedPad.row === p.row;
+        const isWireFrom = sdWireFrom && sdWireFrom.col === p.col && sdWireFrom.row === p.row;
+        const { x, y } = padPixel(p.col, p.row);
+        const half = CELL/2 - 3;
+        sdGridCtx.fillStyle = isWireFrom ? '#fdecea' : isSel ? '#d6eaf8' : '#e8daef';
+        sdGridCtx.strokeStyle = isWireFrom ? '#e74c3c' : isSel ? '#2980b9' : '#8e44ad';
+        sdGridCtx.lineWidth = (isSel || isWireFrom) ? 2 : 1.5;
+        sdGridCtx.fillRect(x-half, y-half, half*2, half*2);
+        sdGridCtx.strokeRect(x-half, y-half, half*2, half*2);
+        sdGridCtx.fillStyle = '#4a235a';
+        sdGridCtx.font = 'bold 9px Arial';
+        sdGridCtx.textAlign = 'center'; sdGridCtx.textBaseline = 'middle';
+        const lbl = p.label || (p.col + ',' + p.row);
+        sdGridCtx.fillText(lbl.length > 6 ? lbl.slice(0,5)+'…' : lbl, x, y);
+    });
+
+    // Wire-draw preview: if sdWireFrom is set, show hint text
+    if (sdWireFrom) {
+        sdGridCtx.fillStyle = '#e74c3c';
+        sdGridCtx.font = '10px Arial'; sdGridCtx.textAlign = 'left'; sdGridCtx.textBaseline = 'top';
+        sdGridCtx.fillText('Now click target pad…', M + 4, 4);
+    }
+}
+
+sdGridCanvas.addEventListener('click', e => {
+    const s = getSampleBeingEdited(); if (!s) return;
+    const r = sdGridCanvas.getBoundingClientRect();
+    const M = sdGridCanvas._margin || 80;
+    const col = Math.floor((e.clientX - r.left - M) / CELL);
+    const row = Math.floor((e.clientY - r.top  - M) / CELL);
+    if (col < 0 || col >= s.gridW || row < 0 || row >= s.gridH) return;
+
+    if (sdGridMode === 'wire') {
+        const hasPad = (s.pads||[]).some(p => p.col===col && p.row===row);
+        if (!hasPad) return; // can only wire between existing pads
+        if (!sdWireFrom) {
+            sdWireFrom = { col, row };
+        } else {
+            if (sdWireFrom.col !== col || sdWireFrom.row !== row) {
+                if (!s.padWires) s.padWires = [];
+                // Remove duplicate if already exists
+                const dup = s.padWires.findIndex(pw =>
+                    (pw.fromCol===sdWireFrom.col && pw.fromRow===sdWireFrom.row && pw.toCol===col && pw.toRow===row) ||
+                    (pw.fromCol===col && pw.fromRow===row && pw.toCol===sdWireFrom.col && pw.toRow===sdWireFrom.row));
+                if (dup >= 0) s.padWires.splice(dup, 1); // toggle off
+                else s.padWires.push({ fromCol:sdWireFrom.col, fromRow:sdWireFrom.row, toCol:col, toRow:row });
+            }
+            sdWireFrom = null;
+        }
+        drawSdGrid();
+        return;
+    }
+
+    // Pad mode
+    const existing = s.pads.find(p => p.col === col && p.row === row);
+    if (existing) {
+        sdSelectedPad = { col, row };
+        document.getElementById('sd-pad-editor').style.display = 'block';
+        document.getElementById('sd-pad-label').value = existing.label || '';
+    } else {
+        s.pads.push({ col, row, label: '' });
+        sdSelectedPad = { col, row };
+        document.getElementById('sd-pad-editor').style.display = 'block';
+        document.getElementById('sd-pad-label').value = '';
+    }
+    drawSdGrid();
+});
+
+document.getElementById('sd-pad-label-set').addEventListener('click', () => {
+    const s = getSampleBeingEdited(); if (!s || !sdSelectedPad) return;
+    const p = s.pads.find(p => p.col === sdSelectedPad.col && p.row === sdSelectedPad.row);
+    if (p) p.label = document.getElementById('sd-pad-label').value.trim();
+    drawSdGrid();
+    populateConnTab();
+});
+
+document.getElementById('sd-pad-remove').addEventListener('click', () => {
+    const s = getSampleBeingEdited(); if (!s || !sdSelectedPad) return;
+    s.pads = s.pads.filter(p => !(p.col === sdSelectedPad.col && p.row === sdSelectedPad.row));
+    sdSelectedPad = null;
+    document.getElementById('sd-pad-editor').style.display = 'none';
+    drawSdGrid();
+    populateConnTab();
+});
+
+document.getElementById('sd-grid-apply').addEventListener('click', () => {
+    const s = getSampleBeingEdited(); if (!s) return;
+    const newW = Math.max(2, Math.min(20, parseInt(document.getElementById('sd-grid-w').value) || 8));
+    const newH = Math.max(2, Math.min(20, parseInt(document.getElementById('sd-grid-h').value) || 8));
+    // Remove pads that fall outside new dimensions
+    s.pads = (s.pads || []).filter(p => p.col < newW && p.row < newH);
+    s.gridW = newW; s.gridH = newH;
+    sdSelectedPad = null;
+    document.getElementById('sd-pad-editor').style.display = 'none';
+    drawSdGrid();
+});
+
+// ── Connections tab ───────────────────────────────────
+const sdConnCanvas = document.getElementById('sd-conn-canvas');
+const sdConnCtx    = sdConnCanvas.getContext('2d');
+let sdConnSelWireIdx = null; // wire index selected in connections tab
+
+// RF connector constants (reuse from main RF dialog)
+const SD_RF_PR = 14, SD_RF_RINGS = [38,72,110,140], SD_RF_CAP = [6,10,14,6];
+
+function sdRfPortPositions(count) {
+    const cx = sdConnCanvas.width/2, cy = sdConnCanvas.height/2, pos = []; let rem = count, pi = 0;
+    for (let ring = 0; ring < SD_RF_RINGS.length && rem > 0; ring++) {
+        const n = Math.min(rem, SD_RF_CAP[ring]), r = SD_RF_RINGS[ring];
+        for (let i = 0; i < n; i++) {
+            const a = (2*Math.PI*i/n) - Math.PI/2;
+            pos.push({ portIndex: pi++, x: cx + r*Math.cos(a), y: cy + r*Math.sin(a) });
+            rem--;
+        }
+    }
+    return pos;
+}
+
+// DC pin centres (reuse layout from main connector)
+const SD_PIN_R = 11, SD_PIN_SP = 28, SD_TOP_P = 13, SD_BOT_P = 12;
+function sdDcPinCenters() {
+    const c = [], W = sdConnCanvas.width;
+    const ts = (W - (SD_TOP_P-1)*SD_PIN_SP)/2;
+    for (let i = 0; i < SD_TOP_P; i++) c.push({ pin: 2*i+1, x: ts + i*SD_PIN_SP, y: 30 });
+    const bs = (W - (SD_BOT_P-1)*SD_PIN_SP)/2;
+    for (let i = 0; i < SD_BOT_P; i++) c.push({ pin: 2*i+2, x: bs + i*SD_PIN_SP, y: 64 });
+    return c;
+}
+
+function populateConnTab() {
+    const s = getSampleBeingEdited(); if (!s) return;
+
+    // Pad selector
+    const padSel = document.getElementById('sd-conn-pad');
+    padSel.innerHTML = '<option value="">— pick bond pad —</option>';
+    (s.pads || []).forEach(p => {
+        const lbl = p.label || ('(' + p.col + ',' + p.row + ')');
+        padSel.innerHTML += `<option value="${p.col},${p.row}">${lbl}</option>`;
+    });
+
+    // Wire selector — only wires connected to this sample via sampleConnections
+    const wireSel = document.getElementById('sd-conn-wire');
+    wireSel.innerHTML = '<option value="">— pick wire —</option>';
+    const connectedWireIdxs = [...new Set(
+        sampleConnections.filter(sc => sc.sampleId === s.id).map(sc => sc.wireIndex)
+    )];
+    connectedWireIdxs.forEach(wi => {
+        if (wi >= wires.length) return;
+        const w = wires[wi];
+        const lbl = (w.name || (w.type === 'dc' ? 'DC' : 'RF')) + ' (' + w.stageA + '→' + w.stageB + ')';
+        wireSel.innerHTML += `<option value="${wi}">${lbl}</option>`;
+    });
+
+    renderConnList();
+}
+
+function renderConnList() {
+    const s = getSampleBeingEdited(); if (!s) return;
+    const el = document.getElementById('sd-conn-list');
+    if (!s.pinConnections || s.pinConnections.length === 0) {
+        el.innerHTML = '<span style="color:#aaa;font-style:italic;">None yet</span>';
+        return;
+    }
+    el.innerHTML = s.pinConnections.map((c, i) => `
+        <div style="display:flex;align-items:center;gap:8px;padding:4px 0;border-bottom:1px solid #eee;">
+            <span style="flex:1;"><strong>${c.padLabel}</strong> ← ${c.wireName} <em>${c.pinLabel}</em></span>
+            <button onclick="removePinConnection(${i})" style="padding:2px 7px;font-size:11px;cursor:pointer;border:1px solid #e74c3c;border-radius:3px;background:#fdecea;color:#c0392b;">✕</button>
+        </div>`).join('');
+}
+
+function removePinConnection(i) {
+    const s = getSampleBeingEdited(); if (!s) return;
+    s.pinConnections.splice(i, 1);
+    renderConnList();
+    drawSdGrid();
+}
+
+document.getElementById('sd-conn-wire').addEventListener('change', function() {
+    const wi = parseInt(this.value);
+    if (isNaN(wi)) { document.getElementById('sd-conn-visual').style.display = 'none'; return; }
+    sdConnSelWireIdx = wi;
+    drawConnVisual(wi);
+    document.getElementById('sd-conn-visual').style.display = 'block';
+});
+
+function drawConnVisual(wi) {
+    const wire = wires[wi];
+    if (!wire) return;
+    if (wire.type === 'dc') {
+        sdConnCanvas.width = 400; sdConnCanvas.height = 100;
+        document.getElementById('sd-conn-visual-label').textContent = 'Click a pin to assign:';
+        sdConnCtx.clearRect(0,0,sdConnCanvas.width,sdConnCanvas.height);
+        // Background
+        sdConnCtx.fillStyle = '#d0d0d0'; sdConnCtx.strokeStyle = '#888'; sdConnCtx.lineWidth = 1.5;
+        sdConnCtx.beginPath(); sdConnCtx.roundRect(4,4,sdConnCanvas.width-8,sdConnCanvas.height-8,5);
+        sdConnCtx.fill(); sdConnCtx.stroke();
+        sdDcPinCenters().forEach(({pin, x, y}) => {
+            const isMapped = (getSampleBeingEdited()?.pinConnections||[]).some(c => c.wireIndex===wi && c.pinKey==='pin'+pin);
+            sdConnCtx.beginPath(); sdConnCtx.arc(x, y, SD_PIN_R, 0, Math.PI*2);
+            sdConnCtx.fillStyle = isMapped ? '#d5f5e3' : '#eaf2ff'; sdConnCtx.fill();
+            sdConnCtx.strokeStyle = isMapped ? '#1e8449' : '#5d6d7e'; sdConnCtx.lineWidth = 1.5; sdConnCtx.stroke();
+            sdConnCtx.fillStyle = '#333'; sdConnCtx.font = `bold ${pin>=10?8:9}px Arial`;
+            sdConnCtx.textAlign='center'; sdConnCtx.textBaseline='middle';
+            sdConnCtx.fillText(String(pin), x, y);
+        });
+    } else {
+        // RF
+        sdConnCanvas.width = 320; sdConnCanvas.height = 320;
+        document.getElementById('sd-conn-visual-label').textContent = 'Click a port to assign:';
+        sdConnCtx.clearRect(0,0,sdConnCanvas.width,sdConnCanvas.height);
+        const cx = sdConnCanvas.width/2, cy = sdConnCanvas.height/2;
+        SD_RF_RINGS.forEach(r => {
+            sdConnCtx.beginPath(); sdConnCtx.arc(cx,cy,r,0,Math.PI*2);
+            sdConnCtx.strokeStyle='#e0e0e0'; sdConnCtx.lineWidth=1; sdConnCtx.stroke();
+        });
+        sdConnCtx.beginPath(); sdConnCtx.arc(cx,cy,4,0,Math.PI*2); sdConnCtx.fillStyle='#ccc'; sdConnCtx.fill();
+        const ports = wire.ports || [];
+        sdRfPortPositions(ports.length).forEach(({portIndex:pi, x, y}) => {
+            const p = ports[pi];
+            const isMapped = (getSampleBeingEdited()?.pinConnections||[]).some(c => c.wireIndex===wi && c.pinKey==='port'+pi);
+            sdConnCtx.beginPath(); sdConnCtx.arc(x,y,SD_RF_PR,0,Math.PI*2);
+            sdConnCtx.fillStyle = isMapped ? '#d5f5e3' : '#fef9e7'; sdConnCtx.fill();
+            sdConnCtx.strokeStyle = isMapped ? '#1e8449' : '#f39c12'; sdConnCtx.lineWidth=1.5; sdConnCtx.stroke();
+            sdConnCtx.fillStyle='#333'; sdConnCtx.font='bold 9px Arial';
+            sdConnCtx.textAlign='center'; sdConnCtx.textBaseline='middle';
+            const hasAtten = p && p.attenuation;
+            sdConnCtx.fillText(String(pi+1), x, hasAtten?y-4:y);
+            if (hasAtten) { sdConnCtx.font='8px Arial'; sdConnCtx.fillStyle='#777'; sdConnCtx.fillText(p.attenuation+'dB',x,y+5); }
+        });
+    }
+}
+
+sdConnCanvas.addEventListener('click', e => {
+    const s = getSampleBeingEdited(); if (!s) return;
+    const padVal = document.getElementById('sd-conn-pad').value;
+    if (!padVal || sdConnSelWireIdx === null) return;
+    const wire = wires[sdConnSelWireIdx]; if (!wire) return;
+
+    const [pc, pr] = padVal.split(',').map(Number);
+    const pad = (s.pads||[]).find(p => p.col===pc && p.row===pr);
+    const padLabel = pad ? (pad.label || '('+pc+','+pr+')') : padVal;
+    const wireName = wire.name || (wire.type==='dc'?'DC':'RF');
+
+    const r = sdConnCanvas.getBoundingClientRect();
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+
+    if (wire.type === 'dc') {
+        for (const {pin, x, y} of sdDcPinCenters()) {
+            if (Math.hypot(mx-x, my-y) <= SD_PIN_R) {
+                // Remove existing assignment for this pad+wire if any
+                s.pinConnections = (s.pinConnections||[]).filter(c => !(c.wireIndex===sdConnSelWireIdx && c.pinKey==='pin'+pin));
+                s.pinConnections.push({ padLabel, wireIndex: sdConnSelWireIdx, wireName, pinKey:'pin'+pin, pinLabel:'Pin '+pin });
+                drawConnVisual(sdConnSelWireIdx);
+                renderConnList();
+                drawSdGrid();
+                break;
+            }
+        }
+    } else {
+        const ports = wire.ports || [];
+        for (const {portIndex:pi, x, y} of sdRfPortPositions(ports.length)) {
+            if (Math.hypot(mx-x, my-y) <= SD_RF_PR) {
+                const p = ports[pi];
+                const portLbl = (p&&p.name) ? p.name : 'Port '+(pi+1);
+                s.pinConnections = (s.pinConnections||[]).filter(c => !(c.wireIndex===sdConnSelWireIdx && c.pinKey==='port'+pi));
+                s.pinConnections.push({ padLabel, wireIndex: sdConnSelWireIdx, wireName, pinKey:'port'+pi, pinLabel:portLbl });
+                drawConnVisual(sdConnSelWireIdx);
+                renderConnList();
+                drawSdGrid();
+                break;
+            }
+        }
+    }
+});
+
+// ── Open / close dialog ───────────────────────────────
+function openSampleDialog(id) {
+    editingSampleId = id;
+    sdSelectedPad = null;
+    sdConnSelWireIdx = null;
+    sdWireFrom = null;
+    sdGridMode = 'pad';
+    // Reset mode buttons
+    document.getElementById('sd-mode-pad').style.background = '#e8daef';
+    document.getElementById('sd-mode-pad').style.fontWeight = 'bold';
+    document.getElementById('sd-mode-wire').style.background = '#f8f4ff';
+    document.getElementById('sd-mode-wire').style.fontWeight = 'normal';
+    document.getElementById('sd-mode-hint').textContent = 'Click a cell to add/remove a pad';
+    const s = samples.find(x => x.id === id); if (!s) return;
+
+    document.getElementById('sd-name').value = s.name || '';
+    document.getElementById('sd-grid-w').value = s.gridW || 8;
+    document.getElementById('sd-grid-h').value = s.gridH || 8;
+    document.getElementById('sd-notes').value = s.notes || '';
+    document.getElementById('sd-pad-editor').style.display = 'none';
+    document.getElementById('sd-conn-visual').style.display = 'none';
+
+    // Reset to pads tab
+    document.querySelectorAll('.sd-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.sd-tab-content').forEach(c => c.style.display = 'none');
+    document.querySelector('.sd-tab[data-tab="pads"]').classList.add('active');
+    document.getElementById('sd-tab-pads').style.display = 'block';
+
+    sampleOverlay.style.display = 'block';
+    // Draw grid after display so canvas sizing works
+    setTimeout(drawSdGrid, 0);
+}
+
+document.getElementById('sd-save').addEventListener('click', () => {
+    const s = getSampleBeingEdited(); if (!s) return;
+    s.name = document.getElementById('sd-name').value.trim() || s.name;
+    s.notes = document.getElementById('sd-notes').value;
+    sampleOverlay.style.display = 'none'; editingSampleId = null; redraw();
+});
+
+document.getElementById('sd-delete').addEventListener('click', () => {
+    if (editingSampleId) deleteSample(editingSampleId);
+    sampleOverlay.style.display = 'none'; editingSampleId = null; redraw();
+});
+
+document.getElementById('sd-close').addEventListener('click', () => {
+    // Auto-save name and notes on close
+    const s = getSampleBeingEdited();
+    if (s) { s.name = document.getElementById('sd-name').value.trim() || s.name; s.notes = document.getElementById('sd-notes').value; }
+    sampleOverlay.style.display = 'none'; editingSampleId = null; redraw();
+});
+
+sampleOverlay.addEventListener('click', e => {
+    if (e.target === sampleOverlay) document.getElementById('sd-close').click();
+});
+
 
 // ═══════════════════════════════════════════════════════
 // COMPONENT DEFINITIONS
@@ -411,6 +1242,7 @@ function redraw() {
     ctx.clearRect(0, 0, canvas.width, canvas.height);
     drawStages();
     drawWires();
+    drawSamples();
     if (selectedStage) {
         ctx.strokeStyle = 'red'; ctx.lineWidth = 2;
         ctx.strokeRect(selectedStage.x, selectedStage.y, selectedStage.w, selectedStage.h);
@@ -456,12 +1288,14 @@ function getComponentAt(mx, my) {
 // ═══════════════════════════════════════════════════════
 // WIRE HELPERS
 // ═══════════════════════════════════════════════════════
+const DEFAULT_SPACING = 40;
+
 function getSiblingCount(s1id, s2id) {
     return wires.filter(w=>(w.stageA===s1id&&w.stageB===s2id)||(w.stageA===s2id&&w.stageB===s1id)).length;
 }
 function nextOffset(s1id, s2id, sp) {
     const c = getSiblingCount(s1id, s2id); if (!c) return 0;
-    return ((c%4===1)?1:-1) * Math.ceil(c/2) * (sp||18);
+    return ((c%4===1)?1:-1) * Math.ceil(c/2) * (sp||DEFAULT_SPACING);
 }
 function repositionSiblings(s1id, s2id, sp) {
     const sibs = wires.filter(w=>(w.stageA===s1id&&w.stageB===s2id)||(w.stageA===s2id&&w.stageB===s1id));
@@ -475,13 +1309,93 @@ function repositionSiblings(s1id, s2id, sp) {
 function deleteWire(index) {
     wires.splice(index, 1);
     selectedWire = null;
+    
 }
+
+// ═══════════════════════════════════════════════════════
+// DRAG — move a wire column (all connected wires sharing same x)
+// ═══════════════════════════════════════════════════════
+let dragState = null; // { indices: [], startX, startMx }
+
+// Find all wires in the same vertical "column" as wireIndex
+// (wires that share the same x value, indicating they were snapped together)
+function getColumnIndices(wireIndex) {
+    const x = wires[wireIndex].x1;
+    const SNAP = 2; // pixel tolerance for "same x"
+    return wires
+        .map((w, i) => ({ w, i }))
+        .filter(({ w }) => Math.abs(w.x1 - x) <= SNAP)
+        .map(({ i }) => i);
+}
+
+function canvasCoords(e) {
+    const rect = canvas.getBoundingClientRect();
+    return {
+        mx: (e.clientX - rect.left) * (canvas.width / rect.width),
+        my: (e.clientY - rect.top)  * (canvas.height / rect.height)
+    };
+}
+
+canvas.addEventListener('mousedown', e => {
+    // Only drag in wire-tool modes (not component or delete)
+    if (!WIRE_TOOLS.includes(currentTool)) return;
+    if (selectedStage) return; // mid-placement, don't drag
+
+    const { mx, my } = canvasCoords(e);
+    // Don't start drag if clicking a component
+    if (getComponentAt(mx, my) !== null) return;
+
+    const wi = getWireAt(mx, my);
+    if (wi === null) return;
+
+    const cols = getColumnIndices(wi);
+    // Store original x positions for each wire in the column
+    const origX = cols.map(i => wires[i].x1);
+    dragState = { indices: cols, origX, startMx: mx };
+    canvas.style.cursor = 'ew-resize';
+    e.preventDefault();
+});
+
+canvas.addEventListener('mousemove', e => {
+    if (!dragState) {
+        // Show resize cursor on hover over wire in wire-tool mode
+        if (WIRE_TOOLS.includes(currentTool) && !selectedStage) {
+            const { mx, my } = canvasCoords(e);
+            const wi = getWireAt(mx, my);
+            canvas.style.cursor = wi !== null ? 'ew-resize' : 'default';
+        }
+        return;
+    }
+    const { mx } = canvasCoords(e);
+    const dx = mx - dragState.startMx;
+    dragState.indices.forEach((wi, k) => {
+        const newX = dragState.origX[k] + dx;
+        wires[wi].x1 = newX;
+        wires[wi].x2 = newX;
+    });
+    redraw();
+});
+
+canvas.addEventListener('mouseup', e => {
+    if (!dragState) return;
+    const { mx } = canvasCoords(e);
+    const dragged = Math.abs(mx - dragState.startMx) > 4;
+    if (dragged) { clickSuppressed = true;  }
+    dragState = null;
+    canvas.style.cursor = 'default';
+    redraw();
+});
+
+canvas.addEventListener('mouseleave', () => {
+    if (dragState) { dragState = null; canvas.style.cursor = 'default'; redraw(); }
+});
 
 // ═══════════════════════════════════════════════════════
 // TOOLBAR
 // ═══════════════════════════════════════════════════════
 const COMP_TOOLS = ['attenuator','hemt','switch','isolator','circulator','filter'];
 const WIRE_TOOLS = ['dc','rf'];
+const SAMPLE_TOOL = 'sample';
 
 function setTool(tool) {
     currentTool = tool;
@@ -489,33 +1403,43 @@ function setTool(tool) {
     const btn = document.getElementById('tool-'+tool);
     const isComp = COMP_TOOLS.includes(tool);
     const isDel  = tool==='delete';
-    btn.classList.add(isDel||isComp ? 'active-comp' : 'active');
+    const isSample = tool==='sample';
+    btn.classList.add(isDel||isComp||isSample ? 'active-comp' : 'active');
     if (isDel) btn.classList.add('active');
 
-    const labels = { dc:'DC Wire', rf:'RF Wire', delete:'Delete Mode',
+    const labels = { dc:'DC Wire', rf:'RF Wire', delete:'Delete Mode', sample:'Sample',
         attenuator:'Attenuator', hemt:'HEMT', switch:'Switch',
         isolator:'Isolator', circulator:'Circulator', filter:'Filter' };
     document.getElementById('selected-name').textContent = labels[tool]||tool;
     document.getElementById('instruction').textContent =
         WIRE_TOOLS.includes(tool) ? 'Click first stage, then second' :
-        tool==='delete' ? 'Click a wire or component to delete' :
+        tool==='delete' ? 'Click a wire, component or sample to delete' :
+        tool==='sample' ? 'Click a stage to place sample, or click sample then wire to connect' :
         'Click an RF wire to place';
-    selectedStage = null; redraw();
+    selectedStage = null;
+    if (tool !== 'sample') selectedSampleId = null;
+    redraw();
 }
 
-['dc','rf','attenuator','hemt','switch','isolator','circulator','filter','delete']
+['dc','rf','attenuator','hemt','switch','isolator','circulator','filter','delete','sample']
     .forEach(t => document.getElementById('tool-'+t).addEventListener('click', ()=>setTool(t)));
 
 // ═══════════════════════════════════════════════════════
 // CANVAS CLICK
 // ═══════════════════════════════════════════════════════
+let clickSuppressed = false; // set true when mouseup follows a real drag
+
 canvas.addEventListener('click', e => {
+    if (clickSuppressed) { clickSuppressed = false; return; }
     const rect = canvas.getBoundingClientRect();
     const mx = (e.clientX-rect.left)*(canvas.width/rect.width);
     const my = (e.clientY-rect.top)*(canvas.height/rect.height);
 
     // ── Delete mode ───────────────────────────────────
     if (currentTool === 'delete') {
+        // Check samples first
+        const hs = getSampleAt(mx, my);
+        if (hs) { deleteSample(hs.id); redraw(); return; }
         const ch = getComponentAt(mx, my);
         if (ch !== null) {
             wires[ch.wireIndex].components.splice(ch.compIndex, 1);
@@ -523,6 +1447,62 @@ canvas.addEventListener('click', e => {
         }
         const wi = getWireAt(mx, my);
         if (wi !== null) { deleteWire(wi); redraw(); return; }
+        return;
+    }
+
+    // ── Sample tool ───────────────────────────────────
+    if (currentTool === 'sample') {
+        const hs = getSampleAt(mx, my);
+        if (hs) {
+            if (selectedSampleId === hs.id) {
+                // Double-click same sample = open dialog
+                openSampleDialog(hs.id);
+            } else {
+                // Select this sample for wiring
+                selectedSampleId = hs.id;
+                redraw();
+            }
+            return;
+        }
+
+        // If a sample is selected and we click a wire, create a connection
+        if (selectedSampleId !== null) {
+            const wi = getWireAt(mx, my);
+            if (wi !== null) {
+                const wire = wires[wi];
+                const sample = samples.find(s => s.id === selectedSampleId);
+                const stage = stages.find(s => s.id === sample.stageId);
+                // wirePos: fractional position along wire where connection attaches (midpoint)
+                const wirePos = 0.5;
+                // elbowY: just below the bottom of the sample's stage
+                const elbowY = stage.y + stage.h + SAMPLE_DROOP * 0.4;
+                // Check not already connected
+                const alreadyConnected = sampleConnections.some(
+                    sc => sc.sampleId === selectedSampleId && sc.wireIndex === wi
+                );
+                if (!alreadyConnected) {
+                    sampleConnections.push({ sampleId: selectedSampleId, wireIndex: wi, wirePos, elbowY });
+                }
+                selectedSampleId = null;
+                redraw();
+                return;
+            }
+            // Clicked empty space — deselect
+            selectedSampleId = null;
+            redraw();
+            return;
+        }
+
+        // Click a stage to place a new sample below it
+        const stage = getStageAt(mx, my);
+        if (stage) {
+            const gridW = parseInt(prompt('Grid width (columns):', '8')) || 8;
+            const gridH = parseInt(prompt('Grid height (rows):', '8')) || 8;
+            const ns = placeSampleOnStage(stage, gridW, gridH);
+            selectedSampleId = null;
+            redraw();
+            openSampleDialog(ns.id);
+        }
         return;
     }
 
@@ -538,6 +1518,7 @@ canvas.addEventListener('click', e => {
             const pos = frac < 1/3 ? 0.15 : frac > 2/3 ? 0.85 : 0.5;
             if (!wire.components) wire.components = [];
             wire.components.push({ type: currentTool, pos, value:'' });
+            
             redraw();
             openCompDialog(wi, wire.components.length-1);
         }
@@ -561,20 +1542,20 @@ canvas.addEventListener('click', e => {
             if (tgt && tgt.id !== selectedStage.id) {
                 const nw = { type:currentTool, stageA:selectedStage.id, stageB:nearStageId,
                     x1:nearX, y1:selectedStage.y+selectedStage.h/2,
-                    x2:nearX, y2:tgt.y+tgt.h/2, spacing:ref.spacing||18, components:[] };
+                    x2:nearX, y2:tgt.y+tgt.h/2, spacing:ref.spacing||DEFAULT_SPACING, components:[] };
                 if (currentTool==='rf') nw.ports=[];
-                selectedStage=null; wires.push(nw); redraw();
+                selectedStage=null; wires.push(nw);  redraw();
             }
             return;
         }
         const stage = getStageAt(mx, my);
         if (!stage) { selectedStage=null; selectedWire=null; redraw(); return; }
-        const sp=18, off=nextOffset(selectedStage.id, stage.id, sp);
+        const sp=DEFAULT_SPACING, off=nextOffset(selectedStage.id, stage.id, sp);
         const nw = { type:currentTool, stageA:selectedStage.id, stageB:stage.id,
             x1:selectedStage.x+selectedStage.w/2+off, y1:selectedStage.y+selectedStage.h/2,
             x2:stage.x+stage.w/2+off, y2:stage.y+stage.h/2, spacing:sp, components:[] };
         if (currentTool==='rf') nw.ports=[];
-        wires.push(nw); selectedStage=null; redraw(); return;
+        wires.push(nw);  selectedStage=null; redraw(); return;
     }
 
     if (wireIndex !== null) {
@@ -583,6 +1564,15 @@ canvas.addEventListener('click', e => {
     const stage = getStageAt(mx, my);
     if (!stage) { selectedStage=null; selectedWire=null; redraw(); return; }
     selectedStage=stage; selectedWire=null; redraw();
+});
+
+canvas.addEventListener('dblclick', e => {
+    if (currentTool !== 'sample') return;
+    const rect = canvas.getBoundingClientRect();
+    const mx = (e.clientX-rect.left)*(canvas.width/rect.width);
+    const my = (e.clientY-rect.top)*(canvas.height/rect.height);
+    const hs = getSampleAt(mx, my);
+    if (hs) { openSampleDialog(hs.id); }
 });
 
 // ═══════════════════════════════════════════════════════
@@ -619,6 +1609,7 @@ document.getElementById('comp-save').addEventListener('click', ()=>{
         const meta = COMP_META[comp.type]||{hasValue:true};
         if (meta.hasValue) comp.value = document.getElementById('comp-value').value;
     }
+    
     compOverlay.style.display='none'; compWireIdx=null; compCompIdx=null; redraw();
 });
 document.getElementById('comp-delete').addEventListener('click', ()=>{
@@ -669,6 +1660,7 @@ connCanvas.addEventListener('click', e=>{
 });
 document.getElementById('dc-dialog-save').addEventListener('click',()=>{
     if(selectedWire!==null) wires[selectedWire].name=document.getElementById('dc-dialog-name').value.trim();
+    
     dcOverlay.style.display='none'; selectedWire=null; redraw();
 });
 document.getElementById('dc-dialog-delete').addEventListener('click',()=>{
@@ -768,6 +1760,7 @@ document.getElementById('rf-spacing-slider').addEventListener('input',function()
 });
 document.getElementById('rf-dialog-save').addEventListener('click',()=>{
     if(rfWireIndex!==null) wires[rfWireIndex].name=document.getElementById('rf-dialog-name').value.trim();
+    
     rfPortsBackup=null; rfOverlay.style.display='none'; rfSelectedPort=null; rfWireIndex=null; selectedWire=null; redraw();
 });
 document.getElementById('rf-dialog-delete').addEventListener('click',()=>{
@@ -802,7 +1795,9 @@ function openWireDialog(index) {
     }
 }
 
+renderFridgeList();
 drawStages();
 </script>
 </body>
 </html>
+
