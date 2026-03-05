@@ -594,6 +594,7 @@ const sdGridCtx    = sdGridCanvas.getContext('2d');
 const CELL = 36; // px per cell
 let sdGridMode = 'pad'; // 'pad' or 'wire'
 let sdWireFrom = null;  // {col, row} — first pad clicked when drawing a wire
+let sdSelWireIdx = null; // index into s.padWires of selected wire (highlighted)
 
 document.getElementById('sd-mode-pad').addEventListener('click', () => {
     sdGridMode = 'pad'; sdWireFrom = null;
@@ -610,7 +611,7 @@ document.getElementById('sd-mode-wire').addEventListener('click', () => {
     document.getElementById('sd-mode-pad').style.fontWeight = 'normal';
     document.getElementById('sd-mode-wire').style.background = '#e8daef';
     document.getElementById('sd-mode-wire').style.fontWeight = 'bold';
-    document.getElementById('sd-mode-hint').textContent = 'Click first pad, then second pad to draw a wire between them';
+    document.getElementById('sd-mode-hint').textContent = 'Click a wire to select/deselect · Click two pads to connect · Click same pair to remove';
     document.getElementById('sd-pad-editor').style.display = 'none';
     drawSdGrid();
 });
@@ -621,27 +622,90 @@ function getSampleBeingEdited() {
 
 function sdGridResize() {
     const s = getSampleBeingEdited(); if (!s) return;
-    // Extra margin around grid for connection label stubs
-    const MARGIN = 80;
+    const MARGIN = 90;
     sdGridCanvas.width  = s.gridW * CELL + 1 + MARGIN * 2;
     sdGridCanvas.height = s.gridH * CELL + 1 + MARGIN * 2;
     sdGridCanvas._margin = MARGIN;
 }
 
-// Returns pixel centre of a pad cell (accounting for margin offset)
 function padPixel(col, row) {
-    const m = sdGridCanvas._margin || 80;
+    const m = sdGridCanvas._margin || 90;
     return { x: m + col * CELL + CELL/2, y: m + row * CELL + CELL/2 };
+}
+
+// ── Orthogonal routing ────────────────────────────────
+// Strategy: exit each pad perpendicularly toward its nearest chip edge,
+// travel out into the margin channel, jog along there, then enter the
+// destination pad the same way from the opposite end.
+// Result: an L- or Z-shaped path of horizontal + vertical segments only.
+function routePadWire(pw, gridW, gridH) {
+    // Determine exit direction for each pad (toward nearest edge)
+    function exitDir(col, row) {
+        const distL = col, distR = gridW - 1 - col;
+        const distT = row, distB = gridH - 1 - row;
+        const best = Math.min(distL, distR, distT, distB);
+        if (distL === best) return { dx: -1, dy: 0 };
+        if (distR === best) return { dx:  1, dy: 0 };
+        if (distT === best) return { dx: 0, dy: -1 };
+        return { dx: 0, dy: 1 };
+    }
+
+    const a  = padPixel(pw.fromCol, pw.fromRow);
+    const b  = padPixel(pw.toCol,   pw.toRow);
+    const da = exitDir(pw.fromCol, pw.fromRow);
+    const db = exitDir(pw.toCol,   pw.toRow);
+    const M  = sdGridCanvas._margin || 90;
+    const CHANNEL_OFFSET = 14; // px inside the margin channel
+
+    // Exit points: step out from pad centre by half-cell + small gap
+    const exitLen = CELL / 2 + CHANNEL_OFFSET;
+    const ax = a.x + da.dx * exitLen;
+    const ay = a.y + da.dy * exitLen;
+    const bx = b.x + db.dx * exitLen;
+    const by = b.y + db.dy * exitLen;
+
+    // Now connect (ax,ay) → (bx,by) with two axis-aligned segments (one elbow)
+    // If exits are parallel (both horizontal or both vertical) use a simple mid-axis jog
+    const pts = [a, { x: ax, y: ay }];
+
+    if (da.dx !== 0 && db.dx !== 0) {
+        // Both exit horizontally → jog via shared vertical midpoint
+        const midX = (ax + bx) / 2;
+        pts.push({ x: midX, y: ay }, { x: midX, y: by });
+    } else if (da.dy !== 0 && db.dy !== 0) {
+        // Both exit vertically → jog via shared horizontal midpoint
+        const midY = (ay + by) / 2;
+        pts.push({ x: ax, y: midY }, { x: bx, y: midY });
+    } else {
+        // One horizontal, one vertical exit → single elbow
+        pts.push({ x: bx, y: ay });
+    }
+
+    pts.push({ x: bx, y: by }, b);
+    return pts;
+}
+
+// Hit-test a polyline: returns true if (mx,my) is within `thresh` px of any segment
+function polylineHit(pts, mx, my, thresh) {
+    for (let i = 0; i < pts.length - 1; i++) {
+        const x1 = pts[i].x, y1 = pts[i].y, x2 = pts[i+1].x, y2 = pts[i+1].y;
+        const dx = x2-x1, dy = y2-y1, len2 = dx*dx + dy*dy;
+        if (len2 === 0) continue;
+        const t = Math.max(0, Math.min(1, ((mx-x1)*dx + (my-y1)*dy) / len2));
+        const px = x1+t*dx - mx, py = y1+t*dy - my;
+        if (px*px + py*py < thresh*thresh) return true;
+    }
+    return false;
 }
 
 function drawSdGrid() {
     const s = getSampleBeingEdited(); if (!s) return;
     sdGridResize();
-    const M = sdGridCanvas._margin || 80;
+    const M = sdGridCanvas._margin || 90;
     const W = s.gridW, H = s.gridH;
     sdGridCtx.clearRect(0, 0, sdGridCanvas.width, sdGridCanvas.height);
 
-    // Faint chip background
+    // Chip background
     sdGridCtx.fillStyle = '#fafafa';
     sdGridCtx.fillRect(M, M, W*CELL, H*CELL);
 
@@ -654,16 +718,20 @@ function drawSdGrid() {
         sdGridCtx.beginPath(); sdGridCtx.moveTo(M, M+r*CELL+.5); sdGridCtx.lineTo(M+W*CELL, M+r*CELL+.5); sdGridCtx.stroke();
     }
 
-    // ── Schematic wires between pads ──────────────────
-    (s.padWires || []).forEach(pw => {
-        const a = padPixel(pw.fromCol, pw.fromRow);
-        const b = padPixel(pw.toCol,   pw.toRow);
-        sdGridCtx.strokeStyle = '#c0392b'; sdGridCtx.lineWidth = 2;
-        sdGridCtx.beginPath(); sdGridCtx.moveTo(a.x, a.y); sdGridCtx.lineTo(b.x, b.y); sdGridCtx.stroke();
+    // ── Schematic wires (orthogonal routed, grey unless selected) ────
+    (s.padWires || []).forEach((pw, idx) => {
+        const pts = routePadWire(pw, W, H);
+        const isSel = idx === sdSelWireIdx;
+        sdGridCtx.strokeStyle = isSel ? '#c0392b' : '#bbb';
+        sdGridCtx.lineWidth   = isSel ? 2.5 : 1.5;
+        sdGridCtx.setLineDash(isSel ? [] : [3, 3]);
+        sdGridCtx.beginPath();
+        pts.forEach((p, i) => i === 0 ? sdGridCtx.moveTo(p.x, p.y) : sdGridCtx.lineTo(p.x, p.y));
+        sdGridCtx.stroke();
+        sdGridCtx.setLineDash([]);
     });
 
     // ── Connection stubs (wire name annotations) ──────
-    // For each pad, collect all pinConnections that reference it
     const pinConns = s.pinConnections || [];
     (s.pads || []).forEach(p => {
         const mine = pinConns.filter(c => {
@@ -672,48 +740,39 @@ function drawSdGrid() {
         });
         if (mine.length === 0) return;
         const { x: px, y: py } = padPixel(p.col, p.row);
-
-        // Determine which side of the chip edge is closest → stub goes that way
-        // Left edge: col===0, right: col===W-1, top: row===0, bottom: row===H-1
-        // For interior pads just stub upward
         let dx = 0, dy = -1;
-        if (p.col === 0)   { dx = -1; dy = 0; }
-        else if (p.col === W-1) { dx = 1; dy = 0; }
-        else if (p.row === 0)   { dx = 0; dy = -1; }
-        else if (p.row === H-1) { dx = 0; dy = 1; }
+        if (p.col === 0)        { dx = -1; dy = 0; }
+        else if (p.col === W-1) { dx =  1; dy = 0; }
+        else if (p.row === 0)   { dx =  0; dy = -1; }
+        else if (p.row === H-1) { dx =  0; dy =  1; }
 
         const STUB = 18;
         mine.forEach((c, i) => {
             const offset = (i - (mine.length-1)/2) * 14;
-            // Perpendicular offset
             const ox = dy * offset, oy = -dx * offset;
             const x1 = px + ox, y1 = py + oy;
             const x2 = px + dx * STUB + ox, y2 = py + dy * STUB + oy;
-
             const isRf = wires[c.wireIndex]?.type === 'rf';
             sdGridCtx.strokeStyle = isRf ? '#e67e22' : '#27ae60';
             sdGridCtx.lineWidth = 1.5;
             sdGridCtx.beginPath(); sdGridCtx.moveTo(x1, y1); sdGridCtx.lineTo(x2, y2); sdGridCtx.stroke();
-
-            // Label at stub end
             sdGridCtx.fillStyle = isRf ? '#b7510a' : '#1a6630';
             sdGridCtx.font = 'bold 8px Arial';
             sdGridCtx.textAlign = dx > 0 ? 'left' : dx < 0 ? 'right' : 'center';
             sdGridCtx.textBaseline = dy > 0 ? 'top' : dy < 0 ? 'bottom' : 'middle';
-            const label = c.wireName + ' ' + c.pinLabel;
-            sdGridCtx.fillText(label, x2 + dx*2, y2 + dy*2);
+            sdGridCtx.fillText(c.wireName + ' ' + c.pinLabel, x2 + dx*2, y2 + dy*2);
         });
     });
 
-    // ── Pads ──────────────────────────────────────────
+    // ── Pads (drawn last so they sit on top of wire routes) ──
     (s.pads || []).forEach(p => {
         const isSel = sdSelectedPad && sdSelectedPad.col === p.col && sdSelectedPad.row === p.row;
         const isWireFrom = sdWireFrom && sdWireFrom.col === p.col && sdWireFrom.row === p.row;
         const { x, y } = padPixel(p.col, p.row);
         const half = CELL/2 - 3;
-        sdGridCtx.fillStyle = isWireFrom ? '#fdecea' : isSel ? '#d6eaf8' : '#e8daef';
+        sdGridCtx.fillStyle   = isWireFrom ? '#fdecea' : isSel ? '#d6eaf8' : '#e8daef';
         sdGridCtx.strokeStyle = isWireFrom ? '#e74c3c' : isSel ? '#2980b9' : '#8e44ad';
-        sdGridCtx.lineWidth = (isSel || isWireFrom) ? 2 : 1.5;
+        sdGridCtx.lineWidth   = (isSel || isWireFrom) ? 2 : 1.5;
         sdGridCtx.fillRect(x-half, y-half, half*2, half*2);
         sdGridCtx.strokeRect(x-half, y-half, half*2, half*2);
         sdGridCtx.fillStyle = '#4a235a';
@@ -723,7 +782,6 @@ function drawSdGrid() {
         sdGridCtx.fillText(lbl.length > 6 ? lbl.slice(0,5)+'…' : lbl, x, y);
     });
 
-    // Wire-draw preview: if sdWireFrom is set, show hint text
     if (sdWireFrom) {
         sdGridCtx.fillStyle = '#e74c3c';
         sdGridCtx.font = '10px Arial'; sdGridCtx.textAlign = 'left'; sdGridCtx.textBaseline = 'top';
@@ -734,24 +792,40 @@ function drawSdGrid() {
 sdGridCanvas.addEventListener('click', e => {
     const s = getSampleBeingEdited(); if (!s) return;
     const r = sdGridCanvas.getBoundingClientRect();
-    const M = sdGridCanvas._margin || 80;
-    const col = Math.floor((e.clientX - r.left - M) / CELL);
-    const row = Math.floor((e.clientY - r.top  - M) / CELL);
-    if (col < 0 || col >= s.gridW || row < 0 || row >= s.gridH) return;
+    const M = sdGridCanvas._margin || 90;
+    const mx = e.clientX - r.left, my = e.clientY - r.top;
+    const col = Math.floor((mx - M) / CELL);
+    const row = Math.floor((my - M) / CELL);
+    const inGrid = col >= 0 && col < s.gridW && row >= 0 && row < s.gridH;
 
     if (sdGridMode === 'wire') {
+        // First check: did we click an existing wire?
+        const padWires = s.padWires || [];
+        for (let i = 0; i < padWires.length; i++) {
+            const pts = routePadWire(padWires[i], s.gridW, s.gridH);
+            if (polylineHit(pts, mx, my, 7)) {
+                sdSelWireIdx = (sdSelWireIdx === i) ? null : i;
+                sdWireFrom = null;
+                drawSdGrid();
+                return;
+            }
+        }
+
+        if (!inGrid) { sdSelWireIdx = null; sdWireFrom = null; drawSdGrid(); return; }
+
         const hasPad = (s.pads||[]).some(p => p.col===col && p.row===row);
-        if (!hasPad) return; // can only wire between existing pads
+        if (!hasPad) { sdSelWireIdx = null; sdWireFrom = null; drawSdGrid(); return; }
+
         if (!sdWireFrom) {
             sdWireFrom = { col, row };
+            sdSelWireIdx = null;
         } else {
             if (sdWireFrom.col !== col || sdWireFrom.row !== row) {
                 if (!s.padWires) s.padWires = [];
-                // Remove duplicate if already exists
                 const dup = s.padWires.findIndex(pw =>
                     (pw.fromCol===sdWireFrom.col && pw.fromRow===sdWireFrom.row && pw.toCol===col && pw.toRow===row) ||
                     (pw.fromCol===col && pw.fromRow===row && pw.toCol===sdWireFrom.col && pw.toRow===sdWireFrom.row));
-                if (dup >= 0) s.padWires.splice(dup, 1); // toggle off
+                if (dup >= 0) { s.padWires.splice(dup, 1); sdSelWireIdx = null; }
                 else s.padWires.push({ fromCol:sdWireFrom.col, fromRow:sdWireFrom.row, toCol:col, toRow:row });
             }
             sdWireFrom = null;
@@ -760,7 +834,8 @@ sdGridCanvas.addEventListener('click', e => {
         return;
     }
 
-    // Pad mode
+    // Pad mode — must be inside grid
+    if (!inGrid) return;
     const existing = s.pads.find(p => p.col === col && p.row === row);
     if (existing) {
         sdSelectedPad = { col, row };
@@ -774,6 +849,7 @@ sdGridCanvas.addEventListener('click', e => {
     }
     drawSdGrid();
 });
+
 
 document.getElementById('sd-pad-label-set').addEventListener('click', () => {
     const s = getSampleBeingEdited(); if (!s || !sdSelectedPad) return;
@@ -989,6 +1065,7 @@ function openSampleDialog(id) {
     sdConnSelWireIdx = null;
     sdWireFrom = null;
     sdGridMode = 'pad';
+    sdSelWireIdx = null;
     // Reset mode buttons
     document.getElementById('sd-mode-pad').style.background = '#e8daef';
     document.getElementById('sd-mode-pad').style.fontWeight = 'bold';
